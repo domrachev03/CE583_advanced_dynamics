@@ -1,0 +1,40 @@
+[workspace]
+authors = ["Ivan Domrachev <i_domrachev@kaist.ac.kr>"]
+channels = ["robostack-humble", "conda-forge"]
+name = "phantom_sim"
+platforms = ["osx-arm64"]
+version = "0.1.0"
+
+[activation]
+scripts = ["scripts/activate.sh"]
+
+[tasks]
+build = { cmd = "colcon build --symlink-install --cmake-args -G Ninja", inputs = ["src"] }
+sim = { cmd = "ros2 launch phantom_sim sim.launch.py", depends-on = ["build"] }
+
+[dependencies]
+# ROS2
+ros-humble-rclcpp = "*"
+ros-humble-std-msgs = "*"
+ros-humble-sensor-msgs = "*"
+ros-humble-geometry-msgs = "*"
+ros-humble-tf2-ros = "*"
+ros-humble-rviz2 = "*"
+ros-humble-ament-cmake = "*"
+ros-humble-ament-index-cpp = "*"
+ros-humble-launch-ros = "*"
+
+# Build tools
+colcon-common-extensions = "*"
+compilers = "*"
+cmake = "<4"
+ninja = "*"
+pkg-config = "*"
+
+# Libraries
+casadi = "*"
+yaml-cpp = "*"
+ros-humble-ros2cli = ">=0.18.17,<0.19"
+ros-humble-ros2run = ">=0.18.17,<0.19"
+ros-humble-ros2topic = ">=0.18.17,<0.19"
+ros-humble-ros2launch = ">=0.19.13,<0.20"

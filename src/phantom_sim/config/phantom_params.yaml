@@ -1,0 +1,57 @@
+phantom:
+  dof: 3
+  gravity: [0.0, 0.0, -9.81]  # m/s^2
+
+  # Kinematic dimensions (mm)
+  kinematics:
+    base_height: 101.0
+    upper_arm_offset: 131.0
+    link4_x_offset: -33.0
+    link5_x_offset: 210.0
+
+  # Link parameters (masses in kg, COM in mm, inertia in kg*mm^2)
+  links:
+    link1:
+      mass: 0.530
+      com: [-9.604, 15.159, 59.074]
+      inertia:
+        - [2541.211, -82.979, -190.902]
+        - [-82.979, 2090.928, -577.713]
+        - [-190.902, -577.713, 1347.574]
+
+    link2:
+      mass: 0.192
+      com: [57.307, 0.0, -12.270]
+      inertia:
+        - [191.411, 0.0, 17.871]
+        - [0.0, 332.670, 0.0]
+        - [17.871, 0.0, 170.245]
+
+    link3:
+      mass: 0.284
+      com: [-42.296, 8.638, -10.508]
+      inertia:
+        - [186.052, 69.115, -53.174]
+        - [69.115, 1718.842, 8.788]
+        - [-53.174, 8.788, 1582.435]
+
+    link4:
+      mass: 0.058
+      com: [108.424, 0.0, 0.0]
+      inertia:
+        - [4.030, 0.0, 0.0]
+        - [0.0, 400.314, 0.0]
+        - [0.0, 0.0, 398.071]
+
+    link5:
+      mass: 0.025
+      com: [65.274, 0.0, 0.0]
+      inertia:
+        - [0.335, -0.115, 0.0]
+        - [-0.115, 61.954, 0.0]
+        - [0.0, 0.0, 61.955]
+
+  simulation:
+    integration_dt: 0.0001   # seconds (0.1 ms)
+    publish_rate: 1000.0     # Hz – joint-state publishing
+    tf_rate: 100.0           # Hz – TF broadcasting
