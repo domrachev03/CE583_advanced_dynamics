@@ -141,15 +141,8 @@ private:
 
     // ---- Publishing --------------------------------------------------------
     void publish_state() {
-        static int pub_count = 0;
-        if (++pub_count == 1 || pub_count % 1000 == 0) {
-            RCLCPP_INFO(get_logger(), "step %d  q=[%.4f, %.4f, %.4f]  dq=[%.6f, %.6f, %.6f]",
-                        pub_count, q_[0], q_[1], q_[2], dq_[0], dq_[1], dq_[2]);
-        }
         auto msg = sensor_msgs::msg::JointState();
         msg.header.stamp = now();
-
-        // 3 actuated + 2 coupled (four-bar linkage)
         msg.name     = {"joint1", "joint2", "joint3", "joint4", "joint5"};
         msg.position = {q_[0], q_[1], q_[2],
                         M_PI / 2 - q_[1] + q_[2],
@@ -168,7 +161,6 @@ private:
         auto transforms = model_->forward_kinematics(
             {q_[0], q_[1], q_[2]});
 
-        // parent → child mapping  (matches FK function output order)
         static const std::pair<std::string, std::string> frames[] = {
             {"base_link", "link1"},
             {"link1",     "link2"},
@@ -204,30 +196,94 @@ private:
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
         }
-        RCLCPP_INFO(get_logger(), "Starting integration (dt=%.1f us)", dt_ * 1e6);
+        RCLCPP_INFO(get_logger(),
+            "Starting integration (dt=%.1f us, pub=%d Hz, tf=%d Hz)",
+            dt_ * 1e6,
+            static_cast<int>(model_->sim_params().publish_rate),
+            static_cast<int>(model_->sim_params().tf_rate));
 
-        int step = 0;
-        auto next = std::chrono::steady_clock::now();
+        using clock = std::chrono::steady_clock;
+        int64_t step = 0;
+        auto next = clock::now();
         const auto step_dur =
             std::chrono::nanoseconds(static_cast<int64_t>(dt_ * 1e9));
 
+        // Stats accumulators (reset each reporting window)
+        auto stats_start     = clock::now();
+        int64_t stats_steps  = 0;
+        int64_t stats_pubs   = 0;
+        int64_t stats_tfs    = 0;
+        double  rk4_accum_us = 0;   // total RK4 time in µs
+        double  pub_accum_us = 0;   // total publish time in µs
+        double  tf_accum_us  = 0;   // total TF time in µs
+        constexpr double REPORT_INTERVAL_S = 2.0;
+
         while (running_.load(std::memory_order_relaxed)) {
-            // read latest torque
+            // --- read latest torque ---
             std::array<double, 3> tau{};
             {
                 std::lock_guard<std::mutex> lk(tau_mu_);
                 tau = tau_;
             }
 
+            // --- RK4 integration step ---
+            auto t0 = clock::now();
             rk4_step(tau);
+            auto t1 = clock::now();
+            rk4_accum_us += std::chrono::duration<double, std::micro>(t1 - t0).count();
             ++step;
+            ++stats_steps;
 
-            if (step % pub_skip_ == 0)  publish_state();
-            if (step % tf_skip_  == 0)  publish_tf();
+            // --- publish joint state at configured rate ---
+            if (step % pub_skip_ == 0) {
+                auto p0 = clock::now();
+                publish_state();
+                auto p1 = clock::now();
+                pub_accum_us += std::chrono::duration<double, std::micro>(p1 - p0).count();
+                ++stats_pubs;
+            }
 
-            // busy-wait for fixed-rate real-time execution
+            // --- publish TF at configured rate ---
+            if (step % tf_skip_ == 0) {
+                auto f0 = clock::now();
+                publish_tf();
+                auto f1 = clock::now();
+                tf_accum_us += std::chrono::duration<double, std::micro>(f1 - f0).count();
+                ++stats_tfs;
+            }
+
+            // --- periodic stats report ---
+            auto now_t = clock::now();
+            double elapsed = std::chrono::duration<double>(now_t - stats_start).count();
+            if (elapsed >= REPORT_INTERVAL_S) {
+                double sim_hz  = stats_steps / elapsed;
+                double pub_hz  = stats_pubs  / elapsed;
+                double tf_hz   = stats_tfs   / elapsed;
+                double rk4_avg = stats_steps > 0 ? rk4_accum_us / stats_steps : 0;
+                double pub_avg = stats_pubs  > 0 ? pub_accum_us / stats_pubs  : 0;
+                double tf_avg  = stats_tfs   > 0 ? tf_accum_us  / stats_tfs   : 0;
+                double rt_ratio = (stats_steps * dt_) / elapsed;
+
+                RCLCPP_INFO(get_logger(),
+                    "sim=%.0f Hz (%.1fx RT) | pub=%.0f Hz | tf=%.0f Hz | "
+                    "rk4=%.0f us  pub=%.0f us  tf=%.0f us | "
+                    "q=[%.3f, %.3f, %.3f]",
+                    sim_hz, rt_ratio, pub_hz, tf_hz,
+                    rk4_avg, pub_avg, tf_avg,
+                    q_[0], q_[1], q_[2]);
+
+                stats_start  = now_t;
+                stats_steps  = 0;
+                stats_pubs   = 0;
+                stats_tfs    = 0;
+                rk4_accum_us = 0;
+                pub_accum_us = 0;
+                tf_accum_us  = 0;
+            }
+
+            // --- busy-wait for fixed-rate real-time execution ---
             next += step_dur;
-            while (std::chrono::steady_clock::now() < next) { /* spin */ }
+            while (clock::now() < next) { /* spin */ }
         }
     }
 
