@@ -227,15 +227,22 @@ void RobotModel::build_model() {
         {q}, {G},
         {"q"}, {"G"});
 
+    // ---- TCP frame (parallelogram closure: link4 → link6) -----------------
+    // The 4th vertex of the parallelogram sits at +link5_x_offset from link4
+    // (by the equal-opposite-sides property of a parallelogram).
+    SX T_46 = make_transform(SX::eye(3),
+        SX::vertcat({kin_params_.link5_x_offset, 0, 0}));
+
     // ---- Forward kinematics (relative transforms for TF) ------------------
     fk_fn_ = Function("fk", {q},
         {reshape(T_01, 16, 1),
          reshape(T_12, 16, 1),
          reshape(T_13, 16, 1),
          reshape(T_24, 16, 1),
-         reshape(T_35, 16, 1)},
+         reshape(T_35, 16, 1),
+         reshape(T_46, 16, 1)},
         {"q"},
-        {"T_01", "T_12", "T_13", "T_24", "T_35"});
+        {"T_01", "T_12", "T_13", "T_24", "T_35", "T_46"});
 }
 
 // ===========================================================================
@@ -276,9 +283,12 @@ std::vector<std::array<double, 16>> RobotModel::forward_kinematics(
     const std::vector<double>& q) const {
     std::vector<DM> args = {DM(q)};
     auto res = fk_fn_(args);
-    std::vector<std::array<double, 16>> out(5);
-    for (int i = 0; i < 5; ++i) {
-        auto v = res.at(i).nonzeros();
+    const int nt = static_cast<int>(res.size());
+    std::vector<std::array<double, 16>> out(nt);
+    for (int i = 0; i < nt; ++i) {
+        // densify: CasADi may mark constant entries as structural zeros
+        DM dense = DM::densify(res.at(i));
+        auto v = dense.nonzeros();
         std::copy(v.begin(), v.end(), out[i].begin());
     }
     return out;
