@@ -52,7 +52,7 @@ phantom:
         - [0.0, 0.0, 6.1955e-05]
 
   simulation:
-    integration_dt: 0.0001   # seconds (0.1 ms)
+    integration_dt: 0.0002   # seconds (0.2 ms = 5 kHz)
     publish_rate: 1000.0     # Hz – joint-state publishing
     tf_rate: 100.0           # Hz – TF broadcasting
     wait_for_input: false    # true = wait for first torque before integrating
