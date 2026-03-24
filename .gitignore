@@ -7,7 +7,12 @@ build/
 install/
 log/
 
-# Beads / Dolt files (added by bd init)
+# Beads / Dolt files
+.beads/
 .dolt/
 *.db
 .beads-credential-key
+AGENTS.md
+
+# Claude
+CLAUDE.md

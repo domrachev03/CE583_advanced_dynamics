@@ -6,11 +6,14 @@ platforms = ["osx-arm64"]
 version = "0.1.0"
 
 [activation]
-scripts = ["scripts/activate.sh"]
+scripts = ["scripts/activate.sh", "install/setup.sh"]
 
 [tasks]
 build = { cmd = "colcon build --symlink-install --cmake-args -G Ninja", inputs = ["src"] }
-sim = { cmd = "ros2 launch phantom_sim sim.launch.py", depends-on = ["build"] }
+sim = {cmd = "pixi run ros2 run phantom_sim simulator_node", depends-on = ["build"] }
+gravity_comp = {cmd = "", depends-on = ["build"]}
+rviz = { cmd = "ros2 run rviz2 rviz2 -d install/phantom_sim/share/phantom_sim/rviz/phantom.rviz", depends-on = ["build"]}
+all = { cmd = "ros2 launch phantom_sim sim.launch.py", depends-on = ["build"] }
 
 [dependencies]
 # ROS2

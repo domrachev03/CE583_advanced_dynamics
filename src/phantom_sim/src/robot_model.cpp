@@ -51,9 +51,10 @@ void RobotModel::load_params(const std::string& config_path) {
 
     // Simulation
     auto sim = ph["simulation"];
-    sim_params_.integration_dt = sim["integration_dt"].as<double>();
-    sim_params_.publish_rate   = sim["publish_rate"].as<double>();
-    sim_params_.tf_rate        = sim["tf_rate"].as<double>();
+    sim_params_.integration_dt  = sim["integration_dt"].as<double>();
+    sim_params_.publish_rate    = sim["publish_rate"].as<double>();
+    sim_params_.tf_rate         = sim["tf_rate"].as<double>();
+    sim_params_.wait_for_input  = sim["wait_for_input"].as<bool>(false);
 }
 
 // ===========================================================================
