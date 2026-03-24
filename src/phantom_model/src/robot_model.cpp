@@ -1,11 +1,11 @@
-#include "phantom_sim/robot_model.hpp"
+#include "phantom_model/robot_model.hpp"
 
 #include <cmath>
 #include <stdexcept>
 
 #include <yaml-cpp/yaml.h>
 
-namespace phantom_sim {
+namespace phantom_model {
 
 using namespace casadi;
 
@@ -266,4 +266,4 @@ std::vector<std::array<double, 16>> RobotModel::forward_kinematics(
     return out;
 }
 
-}  // namespace phantom_sim
+}  // namespace phantom_model

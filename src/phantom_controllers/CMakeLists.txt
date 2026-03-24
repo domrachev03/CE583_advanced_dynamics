@@ -9,7 +9,7 @@ find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(ament_index_cpp REQUIRED)
-find_package(phantom_sim REQUIRED)
+find_package(phantom_model REQUIRED)
 
 # --- Base controller library --------------------------------------------------
 add_library(base_controller SHARED
@@ -20,7 +20,7 @@ target_include_directories(base_controller PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 target_link_libraries(base_controller
-    phantom_sim::robot_model
+    phantom_model::robot_model
 )
 ament_target_dependencies(base_controller
     rclcpp std_msgs sensor_msgs ament_index_cpp)

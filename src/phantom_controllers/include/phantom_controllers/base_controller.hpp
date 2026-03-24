@@ -9,7 +9,7 @@
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
 
-#include "phantom_sim/robot_model.hpp"
+#include "phantom_model/robot_model.hpp"
 
 namespace phantom_controllers {
 
@@ -63,13 +63,13 @@ protected:
     // ---- Robot model access ------------------------------------------------
 
     /// Access the shared robot model (for computing dynamics, FK, etc.)
-    const phantom_sim::RobotModel& model() const { return *model_; }
+    const phantom_model::RobotModel& model() const { return *model_; }
 
 private:
     void joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr msg);
     void control_tick();
 
-    std::unique_ptr<phantom_sim::RobotModel> model_;
+    std::unique_ptr<phantom_model::RobotModel> model_;
 
     // Latest robot state (written by subscription, read by timer + subclass)
     std::array<double, 3> q_      = {0, 0, 0};

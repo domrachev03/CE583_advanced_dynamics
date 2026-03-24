@@ -12,7 +12,7 @@
 #include <tf2_ros/transform_broadcaster.h>
 #include <ament_index_cpp/get_package_share_directory.hpp>
 
-#include "phantom_sim/robot_model.hpp"
+#include "phantom_model/robot_model.hpp"
 
 namespace phantom_sim {
 
@@ -57,10 +57,10 @@ public:
     SimulatorNode()
         : Node("phantom_simulator") {
         // --- Load model ---
-        auto pkg = ament_index_cpp::get_package_share_directory("phantom_sim");
+        auto pkg = ament_index_cpp::get_package_share_directory("phantom_model");
         declare_parameter("config_file", pkg + "/config/phantom_params.yaml");
         std::string cfg = get_parameter("config_file").as_string();
-        model_ = std::make_unique<RobotModel>(cfg);
+        model_ = std::make_unique<phantom_model::RobotModel>(cfg);
 
         dt_ = model_->sim_params().integration_dt;
         const auto& sp = model_->sim_params();
@@ -286,7 +286,7 @@ private:
     }
 
     // ---- Members -----------------------------------------------------------
-    std::unique_ptr<RobotModel> model_;
+    std::unique_ptr<phantom_model::RobotModel> model_;
     double dt_{};
 
     // State: written by integration thread, read by timer callbacks
