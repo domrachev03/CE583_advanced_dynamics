@@ -1,6 +1,6 @@
 #include "phantom_model/robot_model.hpp"
 #include <iostream>
-#include <chrono>
+#include <cmath>
 
 int main(int argc, char** argv) {
     if (argc < 2) {
@@ -8,48 +8,53 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    std::cout << "Building model..." << std::flush;
     phantom_model::RobotModel model(argv[1]);
-    std::cout << " done.\n";
 
-    std::vector<double> q  = {0.0, 0.0, 0.0};
-    std::vector<double> dq = {0.0, 0.0, 0.0};
-    std::vector<double> tau = {0.0, 0.0, 0.0};
+    auto get_pos = [](const std::array<double,16>& T) {
+        return std::array<double,3>{T[12], T[13], T[14]};
+    };
+    auto mat_mul = [](const std::array<double,16>& A, const std::array<double,16>& B) {
+        std::array<double,16> C{};
+        for (int i = 0; i < 4; ++i)
+            for (int j = 0; j < 4; ++j)
+                for (int k = 0; k < 4; ++k)
+                    C[j*4+i] += A[k*4+i] * B[j*4+k];
+        return C;
+    };
+    auto tcp_z = [&](const std::vector<double>& q) {
+        auto fk = model.forward_kinematics(q);
+        auto T06 = mat_mul(mat_mul(mat_mul(fk[0], fk[1]), fk[3]), fk[5]);
+        return get_pos(T06)[2];
+    };
 
-    std::cout << "Inertia matrix D(q)..." << std::flush;
-    auto D = model.inertia_matrix(q);
-    std::cout << "\n  [" << D[0] << ", " << D[1] << ", " << D[2] << "]\n"
-              << "  [" << D[3] << ", " << D[4] << ", " << D[5] << "]\n"
-              << "  [" << D[6] << ", " << D[7] << ", " << D[8] << "]\n";
+    // Check key configurations
+    std::cout << "TCP z at key positions:\n";
+    std::cout << "  q=[0,0,0] (start):        z=" << tcp_z({0,0,0}) << "\n";
+    std::cout << "  q=[0,0,pi/2] (should be low): z=" << tcp_z({0,0,M_PI/2}) << "\n";
+    std::cout << "  q=[0,0,pi]:              z=" << tcp_z({0,0,M_PI}) << "\n";
 
-    std::cout << "Gravity vector G(q)..." << std::flush;
-    auto G = model.gravity_vector(q);
-    std::cout << " G = [" << G[0] << ", " << G[1] << ", " << G[2] << "]\n";
+    // Converged equilibrium from simulation
+    std::cout << "\n  q=[0.156,-3.142,-0.191] (converged): z="
+              << tcp_z({0.156, -3.142, -0.191}) << "\n";
 
-    std::cout << "Forward dynamics (zero torque)..." << std::flush;
-    auto ddq = model.forward_dynamics(q, dq, tau);
-    std::cout << " ddq = [" << ddq[0] << ", " << ddq[1] << ", " << ddq[2] << "]\n";
+    // G at the converged point
+    auto G = model.gravity_vector({0.156, -3.142, -0.191});
+    std::cout << "  G = [" << G[0] << ", " << G[1] << ", " << G[2] << "] (should be ~0)\n";
 
-    std::cout << "Forward dynamics (gravity comp)..." << std::flush;
-    auto ddq_gc = model.forward_dynamics(q, dq, G);
-    std::cout << " ddq = [" << ddq_gc[0] << ", " << ddq_gc[1] << ", " << ddq_gc[2] << "]\n";
+    // G at q=0
+    auto G0 = model.gravity_vector({0, 0, 0});
+    std::cout << "  G(q=0) = [" << G0[0] << ", " << G0[1] << ", " << G0[2] << "]\n";
 
-    std::cout << "Forward kinematics..." << std::flush;
-    auto fk = model.forward_kinematics(q);
-    for (size_t i = 0; i < fk.size(); ++i) {
-        std::cout << "  T_" << i << " pos = ["
-                  << fk[i][12] << ", " << fk[i][13] << ", " << fk[i][14] << "]\n";
+    // ddq at q=0
+    auto ddq0 = model.forward_dynamics({0,0,0},{0,0,0},{0,0,0});
+    std::cout << "  ddq(q=0) = [" << ddq0[0] << ", " << ddq0[1] << ", " << ddq0[2] << "]\n";
+
+    // TCP z sweep for theta3 (with theta2=-pi to match converged state)
+    std::cout << "\ntheta3 sweep (theta1=0, theta2=-pi):\n";
+    for (double th3 = -M_PI; th3 <= M_PI; th3 += M_PI/6) {
+        double z = tcp_z({0, -M_PI, th3});
+        std::cout << "  theta3=" << th3 << "  z=" << z << "\n";
     }
-
-    // Benchmark
-    auto t0 = std::chrono::high_resolution_clock::now();
-    int N = 10000;
-    for (int i = 0; i < N; ++i)
-        model.forward_dynamics(q, dq, tau);
-    auto t1 = std::chrono::high_resolution_clock::now();
-    double us = std::chrono::duration<double, std::micro>(t1 - t0).count() / N;
-    std::cout << "forward_dynamics avg: " << us << " us/call\n";
-    std::cout << "Max integration rate: " << 1e6 / (4 * us) << " Hz (4 calls/RK4 step)\n";
 
     return 0;
 }
