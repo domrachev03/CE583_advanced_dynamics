@@ -28,7 +28,6 @@ struct KinematicParams {
 struct SimParams {
     double integration_dt;
     double publish_rate;
-    double tf_rate;
     bool   wait_for_input;
 };
 

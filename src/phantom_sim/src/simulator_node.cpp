@@ -79,22 +79,19 @@ public:
             "phantom/joint_states", rclcpp::SensorDataQoS());
         tf_bc_  = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
-        // --- Publishing timers (run on executor threads, not integration thread) ---
+        // --- Publishing timer (runs on executor thread, not integration thread) ---
         auto pub_period = std::chrono::nanoseconds(
             static_cast<int64_t>(1e9 / sp.publish_rate));
-        auto tf_period  = std::chrono::nanoseconds(
-            static_cast<int64_t>(1e9 / sp.tf_rate));
 
-        js_timer_ = create_wall_timer(pub_period,
-            std::bind(&SimulatorNode::publish_state, this));
-        tf_timer_ = create_wall_timer(tf_period,
-            std::bind(&SimulatorNode::publish_tf, this));
+        pub_timer_ = create_wall_timer(pub_period, [this]() {
+            publish_state();
+            publish_tf();
+        });
 
         RCLCPP_INFO(get_logger(),
-            "Robot model built (%d DOF) | dt=%.0f us | pub=%d Hz | tf=%d Hz",
+            "Robot model built (%d DOF) | dt=%.0f us | pub=%d Hz",
             model_->ndof(), dt_ * 1e6,
-            static_cast<int>(sp.publish_rate),
-            static_cast<int>(sp.tf_rate));
+            static_cast<int>(sp.publish_rate));
 
         // --- Start dedicated integration thread ---
         running_ = true;
@@ -297,8 +294,7 @@ private:
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr torque_sub_;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr js_pub_;
     std::unique_ptr<tf2_ros::TransformBroadcaster> tf_bc_;
-    rclcpp::TimerBase::SharedPtr js_timer_;
-    rclcpp::TimerBase::SharedPtr tf_timer_;
+    rclcpp::TimerBase::SharedPtr pub_timer_;
 
     std::atomic<bool> running_{false};
     std::atomic<bool> torque_received_{false};
