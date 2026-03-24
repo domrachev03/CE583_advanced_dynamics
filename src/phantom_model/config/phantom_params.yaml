@@ -1,6 +1,7 @@
 phantom:
   dof: 3
   gravity: [0.0, 0.0, -9.81]  # m/s^2
+  damping: [0.01, 0.01, 0.01]  # N*m*s/rad, per-joint viscous damping (0 = undamped)
 
   # Kinematic dimensions (m)
   kinematics:

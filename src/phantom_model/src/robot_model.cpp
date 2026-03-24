@@ -28,6 +28,14 @@ void RobotModel::load_params(const std::string& config_path) {
     for (int i = 0; i < 3; ++i)
         gravity_[i] = ph["gravity"][i].as<double>();
 
+    // Damping (optional, defaults to zero)
+    int ndof = ph["dof"].as<int>(3);
+    damping_.resize(ndof, 0.0);
+    if (ph["damping"]) {
+        for (int i = 0; i < ndof; ++i)
+            damping_[i] = ph["damping"][i].as<double>();
+    }
+
     // Kinematics
     auto kin = ph["kinematics"];
     kin_params_.base_height      = kin["base_height"].as<double>();
@@ -202,14 +210,21 @@ void RobotModel::build_model() {
     }
 
     // ---- Gravity vector  G(q) = ∂V/∂q  -----------------------------------
+    // V = -m·dot(P, g) so that V = +m·9.81·z (increases with height).
+    // With g=[0,0,-9.81]: V = -m·(-9.81)·z = +m·9.81·z  ✓
     SX gvec = SX::vertcat({gravity_[0], gravity_[1], gravity_[2]});
     SX PE   = SX::zeros(1, 1);
     for (int i = 0; i < 5; ++i)
-        PE = PE + links_[i].mass * dot(Pc[i], gvec);
+        PE = PE - links_[i].mass * dot(Pc[i], gvec);
     SX G = gradient(PE, q);
 
-    // ---- Forward dynamics  ddq = D⁻¹(τ − C·dq − G)  ---------------------
-    SX ddq = solve(D, tau - mtimes(C, dq) - G);
+    // ---- Joint damping  B·dq  (diagonal, optional) -------------------------
+    SX B = SX::zeros(3, 3);
+    for (int i = 0; i < 3; ++i)
+        B(i, i) = damping_[i];
+
+    // ---- Forward dynamics  ddq = D⁻¹(τ − C·dq − G − B·dq)  --------------
+    SX ddq = solve(D, tau - mtimes(C, dq) - G - mtimes(B, dq));
 
     fwd_dyn_fn_ = Function("fwd_dyn",
         {q, dq, tau}, {ddq},

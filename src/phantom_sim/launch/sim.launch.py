@@ -26,7 +26,7 @@ def generate_launch_description():
                 "config_file": config,
                 "integration_dt": 0.0002,
                 "publish_rate": 1000.0,
-                "wait_for_input": False,
+                "wait_for_input": True,
             }],
             output="screen",
         ),

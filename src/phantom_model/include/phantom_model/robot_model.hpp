@@ -86,6 +86,7 @@ private:
     std::vector<LinkParams> links_;
     KinematicParams kin_params_{};
     std::array<double, 3> gravity_{};
+    std::vector<double> damping_;  // per-joint viscous damping
 };
 
 }  // namespace phantom_model
