@@ -38,11 +38,20 @@ public:
         const std::vector<double>& dq,
         const std::vector<double>& tau) const;
 
-    /// Gravity vector  G(q)  (torque needed to hold position)
-    std::vector<double> gravity_compensation(
+    /// Inertia matrix  D(q)  (n x n, row-major flattened)
+    std::vector<double> inertia_matrix(
         const std::vector<double>& q) const;
 
-    /// Relative transforms for TF publishing (column-major 4x4, in mm).
+    /// Coriolis/centrifugal matrix  C(q, dq)  (n x n, row-major flattened)
+    std::vector<double> coriolis_matrix(
+        const std::vector<double>& q,
+        const std::vector<double>& dq) const;
+
+    /// Gravity vector  G(q)  (n x 1)
+    std::vector<double> gravity_vector(
+        const std::vector<double>& q) const;
+
+    /// Relative transforms for TF publishing (column-major 4x4).
     /// Order: T_01, T_12, T_13, T_24, T_35.
     std::vector<std::array<double, 16>> forward_kinematics(
         const std::vector<double>& q) const;
@@ -68,6 +77,8 @@ private:
 
     // ------ Compiled CasADi functions ---------------------------------------
     casadi::Function fwd_dyn_fn_;   // (q, dq, tau) -> ddq
+    casadi::Function inertia_fn_;   // (q)          -> D (n x n)
+    casadi::Function coriolis_fn_;  // (q, dq)      -> C (n x n)
     casadi::Function gravity_fn_;   // (q)          -> G
     casadi::Function fk_fn_;        // (q)          -> 5 x vec16
 

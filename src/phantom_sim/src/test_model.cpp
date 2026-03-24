@@ -16,15 +16,21 @@ int main(int argc, char** argv) {
     std::vector<double> dq = {0.0, 0.0, 0.0};
     std::vector<double> tau = {0.0, 0.0, 0.0};
 
-    std::cout << "Evaluating gravity compensation..." << std::flush;
-    auto G = model.gravity_compensation(q);
+    std::cout << "Inertia matrix D(q)..." << std::flush;
+    auto D = model.inertia_matrix(q);
+    std::cout << "\n  [" << D[0] << ", " << D[1] << ", " << D[2] << "]\n"
+              << "  [" << D[3] << ", " << D[4] << ", " << D[5] << "]\n"
+              << "  [" << D[6] << ", " << D[7] << ", " << D[8] << "]\n";
+
+    std::cout << "Gravity vector G(q)..." << std::flush;
+    auto G = model.gravity_vector(q);
     std::cout << " G = [" << G[0] << ", " << G[1] << ", " << G[2] << "]\n";
 
-    std::cout << "Evaluating forward dynamics (zero torque)..." << std::flush;
+    std::cout << "Forward dynamics (zero torque)..." << std::flush;
     auto ddq = model.forward_dynamics(q, dq, tau);
     std::cout << " ddq = [" << ddq[0] << ", " << ddq[1] << ", " << ddq[2] << "]\n";
 
-    std::cout << "Evaluating forward dynamics (gravity comp)..." << std::flush;
+    std::cout << "Forward dynamics (gravity comp)..." << std::flush;
     auto ddq_gc = model.forward_dynamics(q, dq, G);
     std::cout << " ddq = [" << ddq_gc[0] << ", " << ddq_gc[1] << ", " << ddq_gc[2] << "]\n";
 
