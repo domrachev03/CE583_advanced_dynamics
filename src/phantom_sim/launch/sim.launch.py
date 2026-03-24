@@ -22,7 +22,12 @@ def generate_launch_description():
             package="phantom_sim",
             executable="simulator_node",
             name="phantom_simulator",
-            parameters=[{"config_file": config}],
+            parameters=[{
+                "config_file": config,
+                "integration_dt": 0.0002,
+                "publish_rate": 1000.0,
+                "wait_for_input": False,
+            }],
             output="screen",
         ),
         Node(

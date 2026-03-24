@@ -49,11 +49,6 @@ void RobotModel::load_params(const std::string& config_path) {
                 links_[n].inertia[r][c] = lk["inertia"][r][c].as<double>();
     }
 
-    // Simulation
-    auto sim = ph["simulation"];
-    sim_params_.integration_dt  = sim["integration_dt"].as<double>();
-    sim_params_.publish_rate    = sim["publish_rate"].as<double>();
-    sim_params_.wait_for_input  = sim["wait_for_input"].as<bool>(false);
 }
 
 // ===========================================================================
