@@ -12,12 +12,19 @@ D(q) * ddq + C(q, dq) * dq + G(q) = tau
 
 where D, C, G are built symbolically using CasADi with automatic differentiation for Jacobians and Christoffel symbols. All physical parameters (masses, inertias, COM positions, link dimensions) are loaded from a shared YAML config file.
 
+### ROS2 Packages
+
+| Package | Description |
+|---------|-------------|
+| `phantom_sim` | Robot model (CasADi), simulator node, config, launch files |
+| `phantom_controllers` | Base controller class + gravity compensation controller |
+
 ### ROS2 Nodes
 
-| Node | Description | Rate |
-|------|-------------|------|
-| `simulator_node` | RK4 integration of robot dynamics on a dedicated CPU core | 5 kHz integration, 1 kHz publishing |
-| `gravity_comp_node` | Publishes gravity compensation torque `tau = G(q)` | 1 kHz |
+| Node | Package | Description | Rate |
+|------|---------|-------------|------|
+| `simulator_node` | `phantom_sim` | RK4 integration on a dedicated CPU core | 5 kHz integration, 1 kHz publishing |
+| `gravity_comp_node` | `phantom_controllers` | Gravity compensation controller | 1 kHz |
 
 ### Topics
 
@@ -29,7 +36,7 @@ where D, C, G are built symbolically using CasADi with automatic differentiation
 
 ### Config
 
-All parameters are in `src/phantom_sim/config/phantom_params.yaml` (SI units: meters, kg, kg*m^2). Both the simulator and controller load this same file.
+All parameters are in `src/phantom_sim/config/phantom_params.yaml` (SI units: meters, kg, kg*m^2). Both the simulator and controllers load this same file.
 
 Key simulation settings:
 - `integration_dt` - RK4 timestep (default 0.2 ms = 5 kHz)
@@ -39,7 +46,7 @@ Key simulation settings:
 ## Prerequisites
 
 - [pixi](https://pixi.sh) package manager
-- macOS (arm64) — other platforms may work with `platforms` adjustment in `pixi.toml`
+- macOS (arm64) -- other platforms may work with `platforms` adjustment in `pixi.toml`
 
 ## Quick Start
 
@@ -88,20 +95,31 @@ phantom_sim/
 ├── cyclonedds.xml                     # Localhost DDS config (macOS)
 ├── scripts/activate.sh                # Pixi env activation
 ├── reference_code/inertia.m           # Original MATLAB reference
-└── src/phantom_sim/
-    ├── CMakeLists.txt
-    ├── package.xml
-    ├── config/phantom_params.yaml     # Robot parameters (shared)
-    ├── include/phantom_sim/
-    │   └── robot_model.hpp            # CasADi model API
-    ├── src/
-    │   ├── robot_model.cpp            # Symbolic dynamics (D, C, G)
-    │   ├── simulator_node.cpp         # RK4 integration + publishing
-    │   ├── gravity_comp_node.cpp      # Gravity compensation controller
-    │   └── test_model.cpp             # Standalone model test
-    ├── launch/sim.launch.py           # Launch all nodes + RVIZ2
-    └── rviz/phantom.rviz              # TF tree display config
+├── docs/
+│   ├── simulation.md                  # Simulation architecture
+│   ├── casadi_model.md                # CasADi dynamics model
+│   └── controllers.md                # Writing custom controllers
+├── src/phantom_sim/                   # Simulation package
+│   ├── config/phantom_params.yaml     # Robot parameters (shared)
+│   ├── include/phantom_sim/
+│   │   └── robot_model.hpp            # CasADi model API
+│   ├── src/
+│   │   ├── robot_model.cpp            # Symbolic dynamics (D, C, G)
+│   │   ├── simulator_node.cpp         # RK4 integration + publishing
+│   │   └── test_model.cpp             # Standalone model test
+│   ├── launch/sim.launch.py           # Launch all nodes + RVIZ2
+│   └── rviz/phantom.rviz             # TF tree display config
+└── src/phantom_controllers/           # Controllers package
+    ├── include/phantom_controllers/
+    │   └── base_controller.hpp        # Extensible base class
+    └── src/
+        ├── base_controller.cpp        # Base: subscriptions, timers, gravity comp
+        └── gravity_comp_node.cpp      # Example: pure gravity compensation
 ```
+
+## Writing Custom Controllers
+
+See [docs/controllers.md](docs/controllers.md) for a guide on extending `BaseController`.
 
 ## Performance
 
@@ -115,3 +133,9 @@ Measured on Apple M-series (arm64):
 | JointState publish rate | 1,000 Hz |
 | TF publish rate | 1,000 Hz |
 | Shutdown time (SIGTERM) | ~0.2 s |
+
+## Documentation
+
+- [Simulation architecture](docs/simulation.md)
+- [CasADi dynamics model](docs/casadi_model.md)
+- [Writing custom controllers](docs/controllers.md)
