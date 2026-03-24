@@ -2,56 +2,57 @@ phantom:
   dof: 3
   gravity: [0.0, 0.0, -9.81]  # m/s^2
 
-  # Kinematic dimensions (mm)
+  # Kinematic dimensions (m)
   kinematics:
-    base_height: 101.0
-    upper_arm_offset: 131.0
-    link4_x_offset: -33.0
-    link5_x_offset: 210.0
+    base_height: 0.101
+    upper_arm_offset: 0.131
+    link4_x_offset: -0.033
+    link5_x_offset: 0.210
 
-  # Link parameters (masses in kg, COM in mm, inertia in kg*mm^2)
+  # Link parameters: masses in kg, COM in m, inertia in kg*m^2
   links:
     link1:
       mass: 0.530
-      com: [-9.604, 15.159, 59.074]
+      com: [-0.009604, 0.015159, 0.059074]
       inertia:
-        - [2541.211, -82.979, -190.902]
-        - [-82.979, 2090.928, -577.713]
-        - [-190.902, -577.713, 1347.574]
+        - [2.541211e-03, -8.2979e-05, -1.90902e-04]
+        - [-8.2979e-05, 2.090928e-03, -5.77713e-04]
+        - [-1.90902e-04, -5.77713e-04, 1.347574e-03]
 
     link2:
       mass: 0.192
-      com: [57.307, 0.0, -12.270]
+      com: [0.057307, 0.0, -0.012270]
       inertia:
-        - [191.411, 0.0, 17.871]
-        - [0.0, 332.670, 0.0]
-        - [17.871, 0.0, 170.245]
+        - [1.91411e-04, 0.0, 1.7871e-05]
+        - [0.0, 3.32670e-04, 0.0]
+        - [1.7871e-05, 0.0, 1.70245e-04]
 
     link3:
       mass: 0.284
-      com: [-42.296, 8.638, -10.508]
+      com: [-0.042296, 0.008638, -0.010508]
       inertia:
-        - [186.052, 69.115, -53.174]
-        - [69.115, 1718.842, 8.788]
-        - [-53.174, 8.788, 1582.435]
+        - [1.86052e-04, 6.9115e-05, -5.3174e-05]
+        - [6.9115e-05, 1.718842e-03, 8.788e-06]
+        - [-5.3174e-05, 8.788e-06, 1.582435e-03]
 
     link4:
       mass: 0.058
-      com: [108.424, 0.0, 0.0]
+      com: [0.108424, 0.0, 0.0]
       inertia:
-        - [4.030, 0.0, 0.0]
-        - [0.0, 400.314, 0.0]
-        - [0.0, 0.0, 398.071]
+        - [4.030e-06, 0.0, 0.0]
+        - [0.0, 4.00314e-04, 0.0]
+        - [0.0, 0.0, 3.98071e-04]
 
     link5:
       mass: 0.025
-      com: [65.274, 0.0, 0.0]
+      com: [0.065274, 0.0, 0.0]
       inertia:
-        - [0.335, -0.115, 0.0]
-        - [-0.115, 61.954, 0.0]
-        - [0.0, 0.0, 61.955]
+        - [3.35e-07, -1.15e-07, 0.0]
+        - [-1.15e-07, 6.1954e-05, 0.0]
+        - [0.0, 0.0, 6.1955e-05]
 
   simulation:
     integration_dt: 0.0001   # seconds (0.1 ms)
     publish_rate: 1000.0     # Hz – joint-state publishing
     tf_rate: 100.0           # Hz – TF broadcasting
+    wait_for_input: false    # true = wait for first torque before integrating

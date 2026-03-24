@@ -185,10 +185,9 @@ private:
             ts.child_frame_id  = frames[i].second;
 
             const auto& T = transforms[i];
-            // positions: mm → m
-            ts.transform.translation.x = T[12] * 0.001;
-            ts.transform.translation.y = T[13] * 0.001;
-            ts.transform.translation.z = T[14] * 0.001;
+            ts.transform.translation.x = T[12];
+            ts.transform.translation.y = T[13];
+            ts.transform.translation.z = T[14];
             ts.transform.rotation      = mat_to_quat(T.data());
 
             tf_bc_->sendTransform(ts);
@@ -197,14 +196,15 @@ private:
 
     // ---- Main loop (occupies one CPU core) ---------------------------------
     void integration_loop() {
-        // Wait for first torque command so controller can start first
-        RCLCPP_INFO(get_logger(), "Waiting for torque command on phantom/torque ...");
-        while (!torque_received_.load(std::memory_order_acquire)) {
-            if (!running_.load(std::memory_order_relaxed)) return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        if (model_->sim_params().wait_for_input) {
+            RCLCPP_INFO(get_logger(),
+                "Waiting for torque command on phantom/torque ...");
+            while (!torque_received_.load(std::memory_order_acquire)) {
+                if (!running_.load(std::memory_order_relaxed)) return;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
         }
-        RCLCPP_INFO(get_logger(), "Torque received – starting integration (dt=%.1f us)",
-                     dt_ * 1e6);
+        RCLCPP_INFO(get_logger(), "Starting integration (dt=%.1f us)", dt_ * 1e6);
 
         int step = 0;
         auto next = std::chrono::steady_clock::now();
