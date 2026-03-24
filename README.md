@@ -16,7 +16,8 @@ where D, C, G are built symbolically using CasADi with automatic differentiation
 
 | Package | Description |
 |---------|-------------|
-| `phantom_sim` | Robot model (CasADi), simulator node, config, launch files |
+| `phantom_model` | CasADi dynamics model library + shared config (no ROS2 dependency) |
+| `phantom_sim` | Simulator node, launch files, RVIZ config |
 | `phantom_controllers` | Base controller class + gravity compensation controller |
 
 ### ROS2 Nodes
@@ -99,12 +100,14 @@ phantom_sim/
 │   ├── simulation.md                  # Simulation architecture
 │   ├── casadi_model.md                # CasADi dynamics model
 │   └── controllers.md                # Writing custom controllers
-├── src/phantom_sim/                   # Simulation package
-│   ├── config/phantom_params.yaml     # Robot parameters (shared)
-│   ├── include/phantom_sim/
+├── src/phantom_model/                 # Model package (no ROS2 dependency)
+│   ├── config/phantom_params.yaml     # Robot parameters (shared by all)
+│   ├── include/phantom_model/
 │   │   └── robot_model.hpp            # CasADi model API
+│   └── src/
+│       └── robot_model.cpp            # Symbolic dynamics (D, C, G)
+├── src/phantom_sim/                   # Simulation package
 │   ├── src/
-│   │   ├── robot_model.cpp            # Symbolic dynamics (D, C, G)
 │   │   ├── simulator_node.cpp         # RK4 integration + publishing
 │   │   └── test_model.cpp             # Standalone model test
 │   ├── launch/sim.launch.py           # Launch all nodes + RVIZ2

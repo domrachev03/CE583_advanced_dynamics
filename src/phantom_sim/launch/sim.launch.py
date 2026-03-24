@@ -5,9 +5,10 @@ from ament_index_python.packages import get_package_share_directory
 
 
 def generate_launch_description():
-    pkg = get_package_share_directory("phantom_sim")
-    config = os.path.join(pkg, "config", "phantom_params.yaml")
-    rviz_cfg = os.path.join(pkg, "rviz", "phantom.rviz")
+    model_pkg = get_package_share_directory("phantom_model")
+    sim_pkg = get_package_share_directory("phantom_sim")
+    config = os.path.join(model_pkg, "config", "phantom_params.yaml")
+    rviz_cfg = os.path.join(sim_pkg, "rviz", "phantom.rviz")
 
     return LaunchDescription([
         Node(

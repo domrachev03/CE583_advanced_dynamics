@@ -1,4 +1,4 @@
-#include "phantom_sim/robot_model.hpp"
+#include "phantom_model/robot_model.hpp"
 #include <iostream>
 #include <chrono>
 
@@ -9,7 +9,7 @@ int main(int argc, char** argv) {
     }
 
     std::cout << "Building model..." << std::flush;
-    phantom_sim::RobotModel model(argv[1]);
+    phantom_model::RobotModel model(argv[1]);
     std::cout << " done.\n";
 
     std::vector<double> q  = {0.0, 0.0, 0.0};

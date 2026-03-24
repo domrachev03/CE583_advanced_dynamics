@@ -6,11 +6,11 @@ namespace phantom_controllers {
 
 BaseController::BaseController(const std::string& node_name, double rate_hz)
     : Node(node_name) {
-    // Load robot model from phantom_sim's shared config
-    auto pkg = ament_index_cpp::get_package_share_directory("phantom_sim");
+    // Load robot model from phantom_model's shared config
+    auto pkg = ament_index_cpp::get_package_share_directory("phantom_model");
     declare_parameter("config_file", pkg + "/config/phantom_params.yaml");
     std::string cfg = get_parameter("config_file").as_string();
-    model_ = std::make_unique<phantom_sim::RobotModel>(cfg);
+    model_ = std::make_unique<phantom_model::RobotModel>(cfg);
 
     // Subscribe to joint states
     js_sub_ = create_subscription<sensor_msgs::msg::JointState>(

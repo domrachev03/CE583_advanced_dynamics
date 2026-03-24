@@ -6,7 +6,7 @@
 
 #include <casadi/casadi.hpp>
 
-namespace phantom_sim {
+namespace phantom_model {
 
 // ---------------------------------------------------------------------------
 // Data read from the YAML config
@@ -14,15 +14,15 @@ namespace phantom_sim {
 struct LinkParams {
     std::string name;
     double mass;
-    std::array<double, 3> com;                      // mm, body frame
-    std::array<std::array<double, 3>, 3> inertia;   // kg*mm^2, body frame
+    std::array<double, 3> com;                      // m, body frame
+    std::array<std::array<double, 3>, 3> inertia;   // kg*m^2, body frame
 };
 
 struct KinematicParams {
-    double base_height;       // mm
-    double upper_arm_offset;  // mm
-    double link4_x_offset;    // mm
-    double link5_x_offset;    // mm
+    double base_height;       // m
+    double upper_arm_offset;  // m
+    double link4_x_offset;    // m
+    double link5_x_offset;    // m
 };
 
 struct SimParams {
@@ -85,4 +85,4 @@ private:
     std::array<double, 3> gravity_{};
 };
 
-}  // namespace phantom_sim
+}  // namespace phantom_model
