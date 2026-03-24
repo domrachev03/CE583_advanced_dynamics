@@ -96,6 +96,12 @@ public:
         // --- Start dedicated integration thread ---
         running_ = true;
         thread_  = std::thread(&SimulatorNode::integration_loop, this);
+
+        // Stop integration thread as soon as rclcpp receives SIGTERM/SIGINT,
+        // before the executor finishes unwinding.
+        rclcpp::on_shutdown([this]() {
+            running_.store(false, std::memory_order_release);
+        });
     }
 
     ~SimulatorNode() override {
@@ -273,7 +279,9 @@ private:
 
             // Busy-wait for fixed-rate real-time execution
             next += step_dur;
-            while (clock::now() < next) { /* spin */ }
+            while (clock::now() < next) {
+                if (!running_.load(std::memory_order_relaxed)) break;
+            }
         }
     }
 
