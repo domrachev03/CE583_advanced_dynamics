@@ -57,7 +57,7 @@ void BaseController::control_tick() {
     // Optionally add gravity compensation
     if (use_gravity_comp_) {
         auto q = get_q();
-        auto G = model_->gravity_compensation({q[0], q[1], q[2]});
+        auto G = model_->gravity_vector({q[0], q[1], q[2]});
         for (int i = 0; i < 3; ++i)
             tau[i] += G[i];
     }

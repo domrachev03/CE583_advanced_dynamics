@@ -215,6 +215,14 @@ void RobotModel::build_model() {
         {q, dq, tau}, {ddq},
         {"q", "dq", "tau"}, {"ddq"});
 
+    inertia_fn_ = Function("inertia",
+        {q}, {D},
+        {"q"}, {"D"});
+
+    coriolis_fn_ = Function("coriolis",
+        {q, dq}, {C},
+        {"q", "dq"}, {"C"});
+
     gravity_fn_ = Function("gravity",
         {q}, {G},
         {"q"}, {"G"});
@@ -242,7 +250,22 @@ std::vector<double> RobotModel::forward_dynamics(
     return res.at(0).nonzeros();
 }
 
-std::vector<double> RobotModel::gravity_compensation(
+std::vector<double> RobotModel::inertia_matrix(
+    const std::vector<double>& q) const {
+    std::vector<DM> args = {DM(q)};
+    auto res = inertia_fn_(args);
+    return res.at(0).nonzeros();
+}
+
+std::vector<double> RobotModel::coriolis_matrix(
+    const std::vector<double>& q,
+    const std::vector<double>& dq) const {
+    std::vector<DM> args = {DM(q), DM(dq)};
+    auto res = coriolis_fn_(args);
+    return res.at(0).nonzeros();
+}
+
+std::vector<double> RobotModel::gravity_vector(
     const std::vector<double>& q) const {
     std::vector<DM> args = {DM(q)};
     auto res = gravity_fn_(args);
