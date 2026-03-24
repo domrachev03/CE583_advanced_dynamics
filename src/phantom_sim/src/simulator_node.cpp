@@ -62,8 +62,13 @@ public:
         std::string cfg = get_parameter("config_file").as_string();
         model_ = std::make_unique<phantom_model::RobotModel>(cfg);
 
-        dt_ = model_->sim_params().integration_dt;
-        const auto& sp = model_->sim_params();
+        // --- Simulation parameters (ROS2 parameters, not model concern) ---
+        declare_parameter("integration_dt", 0.0002);
+        declare_parameter("publish_rate", 1000.0);
+        declare_parameter("wait_for_input", false);
+        dt_            = get_parameter("integration_dt").as_double();
+        publish_rate_  = get_parameter("publish_rate").as_double();
+        wait_for_input_ = get_parameter("wait_for_input").as_bool();
 
         // --- ROS I/O (handled by executor threads) ---
         torque_sub_ = create_subscription<std_msgs::msg::Float64MultiArray>(
@@ -81,7 +86,7 @@ public:
 
         // --- Publishing timer (runs on executor thread, not integration thread) ---
         auto pub_period = std::chrono::nanoseconds(
-            static_cast<int64_t>(1e9 / sp.publish_rate));
+            static_cast<int64_t>(1e9 / publish_rate_));
 
         pub_timer_ = create_wall_timer(pub_period, [this]() {
             publish_state();
@@ -91,7 +96,7 @@ public:
         RCLCPP_INFO(get_logger(),
             "Robot model built (%d DOF) | dt=%.0f us | pub=%d Hz",
             model_->ndof(), dt_ * 1e6,
-            static_cast<int>(sp.publish_rate));
+            static_cast<int>(publish_rate_));
 
         // --- Start dedicated integration thread ---
         running_ = true;
@@ -215,7 +220,7 @@ private:
 
     // ---- Integration loop (dedicated thread, occupies one CPU core) --------
     void integration_loop() {
-        if (model_->sim_params().wait_for_input) {
+        if (wait_for_input_) {
             RCLCPP_INFO(get_logger(),
                 "Waiting for torque command on phantom/torque ...");
             while (!torque_received_.load(std::memory_order_acquire)) {
@@ -288,6 +293,8 @@ private:
     // ---- Members -----------------------------------------------------------
     std::unique_ptr<phantom_model::RobotModel> model_;
     double dt_{};
+    double publish_rate_{};
+    bool   wait_for_input_{false};
 
     // State: written by integration thread, read by timer callbacks
     std::array<double, 3> q_  = {0, 0, 0};

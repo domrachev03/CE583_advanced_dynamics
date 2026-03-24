@@ -25,12 +25,6 @@ struct KinematicParams {
     double link5_x_offset;    // m
 };
 
-struct SimParams {
-    double integration_dt;
-    double publish_rate;
-    bool   wait_for_input;
-};
-
 // ---------------------------------------------------------------------------
 // RobotModel – builds CasADi symbolic dynamics once, then evaluates fast.
 // ---------------------------------------------------------------------------
@@ -58,7 +52,6 @@ public:
 
     const std::vector<LinkParams>& links()      const { return links_; }
     const KinematicParams&         kinematics()  const { return kin_params_; }
-    const SimParams&               sim_params()  const { return sim_params_; }
 
 private:
     void load_params(const std::string& config_path);
@@ -81,7 +74,6 @@ private:
     // ------ Parameters loaded from YAML -------------------------------------
     std::vector<LinkParams> links_;
     KinematicParams kin_params_{};
-    SimParams       sim_params_{};
     std::array<double, 3> gravity_{};
 };
 
