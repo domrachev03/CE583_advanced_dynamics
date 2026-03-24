@@ -199,10 +199,11 @@ private:
             {"link1",     "link3"},
             {"link2",     "link4"},
             {"link3",     "link5"},
+            {"link4",     "link6"},   // TCP (parallelogram closure)
         };
 
         auto stamp = now();
-        for (int i = 0; i < 5; ++i) {
+        for (size_t i = 0; i < transforms.size(); ++i) {
             geometry_msgs::msg::TransformStamped ts;
             ts.header.stamp    = stamp;
             ts.header.frame_id = frames[i].first;

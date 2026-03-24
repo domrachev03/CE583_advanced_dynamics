@@ -36,8 +36,8 @@ int main(int argc, char** argv) {
 
     std::cout << "Forward kinematics..." << std::flush;
     auto fk = model.forward_kinematics(q);
-    for (int i = 0; i < 5; ++i) {
-        std::cout << "  T_" << i << " pos(mm) = ["
+    for (size_t i = 0; i < fk.size(); ++i) {
+        std::cout << "  T_" << i << " pos = ["
                   << fk[i][12] << ", " << fk[i][13] << ", " << fk[i][14] << "]\n";
     }
 
