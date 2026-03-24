@@ -205,7 +205,7 @@ void RobotModel::build_model() {
                      + jacobian(D(k, i), q(j))
                      - jacobian(D(i, j), q(k))) / 2.0 * dq(i);
             }
-            C(j, k) = cjk;
+            C(k, j) = cjk;
         }
     }
 

@@ -34,11 +34,11 @@ int main(int argc, char** argv) {
     std::cout << "  q=[0,0,pi]:              z=" << tcp_z({0,0,M_PI}) << "\n";
 
     // Converged equilibrium from simulation
-    std::cout << "\n  q=[0.156,-3.142,-0.191] (converged): z="
-              << tcp_z({0.156, -3.142, -0.191}) << "\n";
+    std::cout << "\n  q=[0,-3.142,1.467] (converged): z="
+              << tcp_z({0, -3.142, 1.467}) << "\n";
 
     // G at the converged point
-    auto G = model.gravity_vector({0.156, -3.142, -0.191});
+    auto G = model.gravity_vector({0, -3.142, 1.467});
     std::cout << "  G = [" << G[0] << ", " << G[1] << ", " << G[2] << "] (should be ~0)\n";
 
     // G at q=0
