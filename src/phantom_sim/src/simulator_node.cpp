@@ -16,7 +16,7 @@
 
 namespace phantom_sim {
 
-// Column-major 4×4 → quaternion  (Shepperd's method)
+// Column-major 4x4 -> quaternion  (Shepperd's method)
 static geometry_msgs::msg::Quaternion mat_to_quat(const double* T) {
     double r00 = T[0], r10 = T[1], r20 = T[2];
     double r01 = T[4], r11 = T[5], r21 = T[6];
@@ -61,15 +61,11 @@ public:
         declare_parameter("config_file", pkg + "/config/phantom_params.yaml");
         std::string cfg = get_parameter("config_file").as_string();
         model_ = std::make_unique<RobotModel>(cfg);
-        RCLCPP_INFO(get_logger(), "Robot model built (%d DOF)", model_->ndof());
 
         dt_ = model_->sim_params().integration_dt;
-        pub_skip_  = std::max(1, static_cast<int>(
-            1.0 / (dt_ * model_->sim_params().publish_rate)));
-        tf_skip_   = std::max(1, static_cast<int>(
-            1.0 / (dt_ * model_->sim_params().tf_rate)));
+        const auto& sp = model_->sim_params();
 
-        // --- ROS I/O ---
+        // --- ROS I/O (handled by executor threads) ---
         torque_sub_ = create_subscription<std_msgs::msg::Float64MultiArray>(
             "phantom/torque", rclcpp::SensorDataQoS(),
             [this](const std_msgs::msg::Float64MultiArray::SharedPtr msg) {
@@ -83,7 +79,24 @@ public:
             "phantom/joint_states", rclcpp::SensorDataQoS());
         tf_bc_  = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
-        // --- Start integration thread ---
+        // --- Publishing timers (run on executor threads, not integration thread) ---
+        auto pub_period = std::chrono::nanoseconds(
+            static_cast<int64_t>(1e9 / sp.publish_rate));
+        auto tf_period  = std::chrono::nanoseconds(
+            static_cast<int64_t>(1e9 / sp.tf_rate));
+
+        js_timer_ = create_wall_timer(pub_period,
+            std::bind(&SimulatorNode::publish_state, this));
+        tf_timer_ = create_wall_timer(tf_period,
+            std::bind(&SimulatorNode::publish_tf, this));
+
+        RCLCPP_INFO(get_logger(),
+            "Robot model built (%d DOF) | dt=%.0f us | pub=%d Hz | tf=%d Hz",
+            model_->ndof(), dt_ * 1e6,
+            static_cast<int>(sp.publish_rate),
+            static_cast<int>(sp.tf_rate));
+
+        // --- Start dedicated integration thread ---
         running_ = true;
         thread_  = std::thread(&SimulatorNode::integration_loop, this);
     }
@@ -94,7 +107,7 @@ public:
     }
 
 private:
-    // ---- RK4 step ----------------------------------------------------------
+    // ---- RK4 step (called only from integration thread) --------------------
     void rk4_step(const std::array<double, 3>& tau) {
         auto eval = [&](const std::vector<double>& qv,
                         const std::vector<double>& dqv) {
@@ -105,10 +118,8 @@ private:
         std::vector<double> qv(q_.begin(), q_.end());
         std::vector<double> dqv(dq_.begin(), dq_.end());
 
-        // k1
         auto ddq1 = eval(qv, dqv);
 
-        // k2
         std::vector<double> q2(3), dq2(3);
         for (int i = 0; i < 3; ++i) {
             q2[i]  = qv[i]  + dt_ / 2 * dqv[i];
@@ -116,7 +127,6 @@ private:
         }
         auto ddq2 = eval(q2, dq2);
 
-        // k3
         std::vector<double> q3(3), dq3(3);
         for (int i = 0; i < 3; ++i) {
             q3[i]  = qv[i]  + dt_ / 2 * dq2[i];
@@ -124,7 +134,6 @@ private:
         }
         auto ddq3 = eval(q3, dq3);
 
-        // k4
         std::vector<double> q4(3), dq4(3);
         for (int i = 0; i < 3; ++i) {
             q4[i]  = qv[i]  + dt_ * dq3[i];
@@ -132,24 +141,34 @@ private:
         }
         auto ddq4 = eval(q4, dq4);
 
-        // update
-        for (int i = 0; i < 3; ++i) {
-            q_[i]  = qv[i]  + dt_ / 6 * (dqv[i]  + 2*dq2[i]  + 2*dq3[i]  + dq4[i]);
-            dq_[i] = dqv[i] + dt_ / 6 * (ddq1[i] + 2*ddq2[i] + 2*ddq3[i] + ddq4[i]);
+        // Write new state under lock
+        {
+            std::lock_guard<std::mutex> lk(state_mu_);
+            for (int i = 0; i < 3; ++i) {
+                q_[i]  = qv[i]  + dt_ / 6 * (dqv[i]  + 2*dq2[i]  + 2*dq3[i]  + dq4[i]);
+                dq_[i] = dqv[i] + dt_ / 6 * (ddq1[i] + 2*ddq2[i] + 2*ddq3[i] + ddq4[i]);
+            }
         }
     }
 
-    // ---- Publishing --------------------------------------------------------
+    // ---- Publishing (called by executor timer threads) ---------------------
     void publish_state() {
+        std::array<double, 3> q, dq;
+        {
+            std::lock_guard<std::mutex> lk(state_mu_);
+            q  = q_;
+            dq = dq_;
+        }
+
         auto msg = sensor_msgs::msg::JointState();
         msg.header.stamp = now();
         msg.name     = {"joint1", "joint2", "joint3", "joint4", "joint5"};
-        msg.position = {q_[0], q_[1], q_[2],
-                        M_PI / 2 - q_[1] + q_[2],
-                        M_PI / 2 + q_[1] - q_[2]};
-        msg.velocity = {dq_[0], dq_[1], dq_[2],
-                        -dq_[1] + dq_[2],
-                         dq_[1] - dq_[2]};
+        msg.position = {q[0], q[1], q[2],
+                        M_PI / 2 - q[1] + q[2],
+                        M_PI / 2 + q[1] - q[2]};
+        msg.velocity = {dq[0], dq[1], dq[2],
+                        -dq[1] + dq[2],
+                         dq[1] - dq[2]};
         {
             std::lock_guard<std::mutex> lk(tau_mu_);
             msg.effort = {tau_[0], tau_[1], tau_[2], 0.0, 0.0};
@@ -158,8 +177,13 @@ private:
     }
 
     void publish_tf() {
-        auto transforms = model_->forward_kinematics(
-            {q_[0], q_[1], q_[2]});
+        std::array<double, 3> q;
+        {
+            std::lock_guard<std::mutex> lk(state_mu_);
+            q = q_;
+        }
+
+        auto transforms = model_->forward_kinematics({q[0], q[1], q[2]});
 
         static const std::pair<std::string, std::string> frames[] = {
             {"base_link", "link1"},
@@ -186,7 +210,7 @@ private:
         }
     }
 
-    // ---- Main loop (occupies one CPU core) ---------------------------------
+    // ---- Integration loop (dedicated thread, occupies one CPU core) --------
     void integration_loop() {
         if (model_->sim_params().wait_for_input) {
             RCLCPP_INFO(get_logger(),
@@ -196,11 +220,7 @@ private:
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
         }
-        RCLCPP_INFO(get_logger(),
-            "Starting integration (dt=%.1f us, pub=%d Hz, tf=%d Hz)",
-            dt_ * 1e6,
-            static_cast<int>(model_->sim_params().publish_rate),
-            static_cast<int>(model_->sim_params().tf_rate));
+        RCLCPP_INFO(get_logger(), "Integration thread started");
 
         using clock = std::chrono::steady_clock;
         int64_t step = 0;
@@ -208,25 +228,21 @@ private:
         const auto step_dur =
             std::chrono::nanoseconds(static_cast<int64_t>(dt_ * 1e9));
 
-        // Stats accumulators (reset each reporting window)
-        auto stats_start     = clock::now();
-        int64_t stats_steps  = 0;
-        int64_t stats_pubs   = 0;
-        int64_t stats_tfs    = 0;
-        double  rk4_accum_us = 0;   // total RK4 time in µs
-        double  pub_accum_us = 0;   // total publish time in µs
-        double  tf_accum_us  = 0;   // total TF time in µs
-        constexpr double REPORT_INTERVAL_S = 2.0;
+        // Stats
+        auto    stats_start    = clock::now();
+        int64_t stats_steps    = 0;
+        double  rk4_accum_us   = 0;
+        constexpr double REPORT_S = 2.0;
 
         while (running_.load(std::memory_order_relaxed)) {
-            // --- read latest torque ---
+            // Read torque
             std::array<double, 3> tau{};
             {
                 std::lock_guard<std::mutex> lk(tau_mu_);
                 tau = tau_;
             }
 
-            // --- RK4 integration step ---
+            // RK4 step (writes q_, dq_ under state_mu_)
             auto t0 = clock::now();
             rk4_step(tau);
             auto t1 = clock::now();
@@ -234,54 +250,31 @@ private:
             ++step;
             ++stats_steps;
 
-            // --- publish joint state at configured rate ---
-            if (step % pub_skip_ == 0) {
-                auto p0 = clock::now();
-                publish_state();
-                auto p1 = clock::now();
-                pub_accum_us += std::chrono::duration<double, std::micro>(p1 - p0).count();
-                ++stats_pubs;
-            }
-
-            // --- publish TF at configured rate ---
-            if (step % tf_skip_ == 0) {
-                auto f0 = clock::now();
-                publish_tf();
-                auto f1 = clock::now();
-                tf_accum_us += std::chrono::duration<double, std::micro>(f1 - f0).count();
-                ++stats_tfs;
-            }
-
-            // --- periodic stats report ---
+            // Periodic stats (integration rate only; publishing has its own timers)
             auto now_t = clock::now();
             double elapsed = std::chrono::duration<double>(now_t - stats_start).count();
-            if (elapsed >= REPORT_INTERVAL_S) {
-                double sim_hz  = stats_steps / elapsed;
-                double pub_hz  = stats_pubs  / elapsed;
-                double tf_hz   = stats_tfs   / elapsed;
-                double rk4_avg = stats_steps > 0 ? rk4_accum_us / stats_steps : 0;
-                double pub_avg = stats_pubs  > 0 ? pub_accum_us / stats_pubs  : 0;
-                double tf_avg  = stats_tfs   > 0 ? tf_accum_us  / stats_tfs   : 0;
+            if (elapsed >= REPORT_S) {
+                double sim_hz   = stats_steps / elapsed;
+                double rk4_avg  = rk4_accum_us / stats_steps;
                 double rt_ratio = (stats_steps * dt_) / elapsed;
 
+                std::array<double, 3> q;
+                {
+                    std::lock_guard<std::mutex> lk(state_mu_);
+                    q = q_;
+                }
+
                 RCLCPP_INFO(get_logger(),
-                    "sim=%.0f Hz (%.1fx RT) | pub=%.0f Hz | tf=%.0f Hz | "
-                    "rk4=%.0f us  pub=%.0f us  tf=%.0f us | "
+                    "sim=%.0f Hz (%.2fx RT) | rk4=%.0f us/step | "
                     "q=[%.3f, %.3f, %.3f]",
-                    sim_hz, rt_ratio, pub_hz, tf_hz,
-                    rk4_avg, pub_avg, tf_avg,
-                    q_[0], q_[1], q_[2]);
+                    sim_hz, rt_ratio, rk4_avg, q[0], q[1], q[2]);
 
                 stats_start  = now_t;
                 stats_steps  = 0;
-                stats_pubs   = 0;
-                stats_tfs    = 0;
                 rk4_accum_us = 0;
-                pub_accum_us = 0;
-                tf_accum_us  = 0;
             }
 
-            // --- busy-wait for fixed-rate real-time execution ---
+            // Busy-wait for fixed-rate real-time execution
             next += step_dur;
             while (clock::now() < next) { /* spin */ }
         }
@@ -290,18 +283,22 @@ private:
     // ---- Members -----------------------------------------------------------
     std::unique_ptr<RobotModel> model_;
     double dt_{};
-    int pub_skip_{1};
-    int tf_skip_{1};
 
+    // State: written by integration thread, read by timer callbacks
     std::array<double, 3> q_  = {0, 0, 0};
     std::array<double, 3> dq_ = {0, 0, 0};
+    std::mutex state_mu_;
 
+    // Torque input: written by subscription callback, read by integration thread
     std::array<double, 3> tau_ = {0, 0, 0};
     std::mutex tau_mu_;
 
+    // ROS I/O
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr torque_sub_;
     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr js_pub_;
     std::unique_ptr<tf2_ros::TransformBroadcaster> tf_bc_;
+    rclcpp::TimerBase::SharedPtr js_timer_;
+    rclcpp::TimerBase::SharedPtr tf_timer_;
 
     std::atomic<bool> running_{false};
     std::atomic<bool> torque_received_{false};
@@ -313,7 +310,9 @@ private:
 int main(int argc, char** argv) {
     rclcpp::init(argc, argv);
     auto node = std::make_shared<phantom_sim::SimulatorNode>();
-    rclcpp::spin(node);
+    rclcpp::executors::MultiThreadedExecutor executor;
+    executor.add_node(node);
+    executor.spin();
     rclcpp::shutdown();
     return 0;
 }
