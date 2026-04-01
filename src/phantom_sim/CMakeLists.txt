@@ -27,7 +27,7 @@ target_link_libraries(test_model phantom_model::robot_model)
 install(TARGETS simulator_node
         DESTINATION lib/${PROJECT_NAME})
 
-install(DIRECTORY launch rviz
+install(DIRECTORY launch rviz plotjuggler
         DESTINATION share/${PROJECT_NAME})
 
 ament_package()

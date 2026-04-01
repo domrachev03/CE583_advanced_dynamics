@@ -9,10 +9,11 @@ version = "0.1.0"
 scripts = ["scripts/activate.sh", "install/setup.sh"]
 
 [tasks]
-build = { cmd = "colcon build --symlink-install --cmake-args -G Ninja", inputs = ["src"] }
+build = { cmd = "colcon build --symlink-install --cmake-args -G Ninja", inputs = ["src"], outputs = ["build", "install"] }
 sim = {cmd = "pixi run ros2 run phantom_sim simulator_node", depends-on = ["build"] }
 gravity_comp = {cmd = "ros2 run phantom_controllers gravity_comp_node", depends-on = ["build"]}
 rviz = { cmd = "ros2 run rviz2 rviz2 -d install/phantom_sim/share/phantom_sim/rviz/phantom.rviz", depends-on = ["build"]}
+plot = { cmd = "ros2 run plotjuggler plotjuggler --layout install/phantom_sim/share/phantom_sim/plotjuggler/joint_states.xml", depends-on = ["build"]}
 all = { cmd = "ros2 launch phantom_sim sim.launch.py", depends-on = ["build"] }
 
 [dependencies]
@@ -41,3 +42,4 @@ ros-humble-ros2cli = ">=0.18.17,<0.19"
 ros-humble-ros2run = ">=0.18.17,<0.19"
 ros-humble-ros2topic = ">=0.18.17,<0.19"
 ros-humble-ros2launch = ">=0.19.13,<0.20"
+ros-humble-plotjuggler-ros = "*"
