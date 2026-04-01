@@ -66,9 +66,22 @@ public:
         declare_parameter("integration_dt", 0.0002);
         declare_parameter("publish_rate", 1000.0);
         declare_parameter("wait_for_input", false);
+        declare_parameter("integrator", std::string("rk4"));
         dt_            = get_parameter("integration_dt").as_double();
         publish_rate_  = get_parameter("publish_rate").as_double();
         wait_for_input_ = get_parameter("wait_for_input").as_bool();
+
+        auto integrator_str = get_parameter("integrator").as_string();
+        if (integrator_str == "euler") {
+            integrator_ = Integrator::EULER;
+        } else if (integrator_str == "rk4") {
+            integrator_ = Integrator::RK4;
+        } else {
+            RCLCPP_WARN(get_logger(),
+                "Unknown integrator '%s', defaulting to rk4",
+                integrator_str.c_str());
+            integrator_ = Integrator::RK4;
+        }
 
         // --- ROS I/O (handled by executor threads) ---
         torque_sub_ = create_subscription<std_msgs::msg::Float64MultiArray>(
@@ -94,9 +107,10 @@ public:
         });
 
         RCLCPP_INFO(get_logger(),
-            "Robot model built (%d DOF) | dt=%.0f us | pub=%d Hz",
+            "Robot model built (%d DOF) | dt=%.0f us | pub=%d Hz | integrator=%s",
             model_->ndof(), dt_ * 1e6,
-            static_cast<int>(publish_rate_));
+            static_cast<int>(publish_rate_),
+            integrator_ == Integrator::EULER ? "euler" : "rk4");
 
         // --- Start dedicated integration thread ---
         running_ = true;
@@ -115,6 +129,24 @@ public:
     }
 
 private:
+    // ---- Semi-implicit (symplectic) Euler step --------------------------------
+    // Update velocity first, then use the NEW velocity to advance position.
+    // This preserves a modified energy, preventing numerical energy drift
+    // that causes undamped systems to diverge.
+    void euler_step(const std::array<double, 3>& tau) {
+        std::vector<double> qv(q_.begin(), q_.end());
+        std::vector<double> dqv(dq_.begin(), dq_.end());
+
+        auto ddq = model_->forward_dynamics(qv, dqv,
+                       {tau[0], tau[1], tau[2]});
+
+        std::lock_guard<std::mutex> lk(state_mu_);
+        for (int i = 0; i < 3; ++i) {
+            dq_[i] += dt_ * ddq[i];   // velocity first (using old q)
+            q_[i]  += dt_ * dq_[i];   // position with NEW velocity
+        }
+    }
+
     // ---- RK4 step (called only from integration thread) --------------------
     void rk4_step(const std::array<double, 3>& tau) {
         auto eval = [&](const std::vector<double>& qv,
@@ -251,9 +283,13 @@ private:
                 tau = tau_;
             }
 
-            // RK4 step (writes q_, dq_ under state_mu_)
+            // Integration step (writes q_, dq_ under state_mu_)
             auto t0 = clock::now();
-            rk4_step(tau);
+            if (integrator_ == Integrator::EULER) {
+                euler_step(tau);
+            } else {
+                rk4_step(tau);
+            }
             auto t1 = clock::now();
             rk4_accum_us += std::chrono::duration<double, std::micro>(t1 - t0).count();
             ++step;
@@ -292,10 +328,13 @@ private:
     }
 
     // ---- Members -----------------------------------------------------------
+    enum class Integrator { EULER, RK4 };
+
     std::unique_ptr<phantom_model::RobotModel> model_;
     double dt_{};
     double publish_rate_{};
     bool   wait_for_input_{false};
+    Integrator integrator_{Integrator::RK4};
 
     // State: written by integration thread, read by timer callbacks
     std::array<double, 3> q_  = {0, 0, 0};

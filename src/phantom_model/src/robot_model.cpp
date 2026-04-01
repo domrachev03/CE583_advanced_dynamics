@@ -194,6 +194,15 @@ void RobotModel::build_model() {
               + mtimes(mtimes(Jw[i].T(), Iw[i]), Jw[i]);
     }
 
+    // Joint 1 rotates the entire mechanism about the gravity (z) axis, so
+    // D(q) is analytically independent of θ1.  CasADi cannot simplify
+    // sin²(θ1)+cos²(θ1)=1, which leaves spurious θ1-dependence that breaks
+    // the skew-symmetry of Ḋ−2C and injects energy numerically.
+    // Setting θ1=0 eliminates the spurious terms; the result is valid for
+    // all θ1 because the true D does not depend on it.
+    D = SX::substitute(D, th1, SX(0));
+    D = SX::simplify(D);
+
     // ---- Coriolis / centrifugal matrix  C(q, dq)  via Christoffel symbols -
     SX C = SX::zeros(3, 3);
     for (int j = 0; j < 3; ++j) {
@@ -205,7 +214,7 @@ void RobotModel::build_model() {
                      + jacobian(D(k, i), q(j))
                      - jacobian(D(i, j), q(k))) / 2.0 * dq(i);
             }
-            C(k, j) = cjk;
+            C(j, k) = cjk;
         }
     }
 
@@ -217,6 +226,11 @@ void RobotModel::build_model() {
     for (int i = 0; i < 5; ++i)
         PE = PE - links_[i].mass * dot(Pc[i], gvec);
     SX G = gradient(PE, q);
+
+    // Same θ1-independence reasoning as for D (gravity along z cannot
+    // create torque about a z-rotation).
+    G = SX::substitute(G, th1, SX(0));
+    G = SX::simplify(G);
 
     // ---- Joint damping  B·dq  (diagonal, optional) -------------------------
     SX B = SX::zeros(3, 3);
