@@ -4,13 +4,17 @@ phantom:
   damping: [0.0, 0.0, 0.0]  # N*m*s/rad, per-joint viscous damping (0 = undamped)
 
   # Kinematic dimensions (m)
+  # Source: PHANToM_inertia_matrix_solution.pdf
   kinematics:
-    base_height: 0.101
+    base_height: 0.1015
     upper_arm_offset: 0.131
     link4_x_offset: -0.033
     link5_x_offset: 0.210
 
   # Link parameters: masses in kg, COM in m, inertia in kg*m^2
+  # Source: PHANToM_inertia_matrix_solution.pdf Table (page 2)
+  # Inertia converted from kg*mm^2 -> kg*m^2 (x1e-6)
+  # COM converted from mm -> m (x1e-3)
   links:
     link1:
       mass: 0.530
@@ -21,20 +25,20 @@ phantom:
         - [-1.90902e-04, -5.77713e-04, 1.347574e-03]
 
     link2:
-      mass: 0.192
-      com: [0.048668, 0.0, -0.005970]
+      mass: 0.562
+      com: [0.057307, 0.0, -0.012270]
       inertia:
-        - [1.91411e-04, 0.0, 1.7871e-05]
-        - [0.0, 3.32670e-04, 0.0]
-        - [1.7871e-05, 0.0, 1.70245e-04]
+        - [4.88786e-04, 0.0, 1.6774e-05]
+        - [0.0, 6.57771e-04, 0.0]
+        - [1.6774e-05, 0.0, 2.66180e-04]
 
     link3:
-      mass: 0.284
-      com: [-0.018096, 0.005658, -0.003932]
+      mass: 0.654
+      com: [-0.042296, 0.008638, -0.010508]
       inertia:
-        - [1.86052e-04, 6.9115e-05, -5.3174e-05]
-        - [6.9115e-05, 1.718842e-03, 8.788e-06]
-        - [-5.3174e-05, 8.788e-06, 1.582435e-03]
+        - [4.97923e-04, 1.053277e-04, -1.15872e-04]
+        - [1.053277e-04, 2.325533e-03, 1.8357e-05]
+        - [-1.15872e-04, 1.8357e-05, 1.954363e-03]
 
     link4:
       mass: 0.058
