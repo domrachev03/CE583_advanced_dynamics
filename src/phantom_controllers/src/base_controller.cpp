@@ -1,5 +1,9 @@
 #include "phantom_controllers/base_controller.hpp"
 
+#include <random>
+#include <stdexcept>
+#include <string>
+
 #include <ament_index_cpp/get_package_share_directory.hpp>
 
 namespace phantom_controllers {
@@ -10,7 +14,55 @@ BaseController::BaseController(const std::string& node_name, double rate_hz)
     auto pkg = ament_index_cpp::get_package_share_directory("phantom_model");
     declare_parameter("config_file", pkg + "/config/phantom_params.yaml");
     std::string cfg = get_parameter("config_file").as_string();
-    model_ = std::make_unique<phantom_model::RobotModel>(cfg);
+
+    // --- Parametric model-error injection ----------------------------------
+    // Lets a controller build its RobotModel against perturbed parameters
+    // while the simulator keeps ground truth.  Defaults (all mins = maxes
+    // = 1.0) produce zero perturbation, so existing controller configs see
+    // no behavioral change.  See phantom_model::ModelErrors for the
+    // physical semantics.
+    declare_parameter("model_error.scalar_min",   1.0);
+    declare_parameter("model_error.scalar_max",   1.0);
+    declare_parameter("model_error.per_link_min", 1.0);
+    declare_parameter("model_error.per_link_max", 1.0);
+    declare_parameter("model_error.seed",         static_cast<int64_t>(42));
+
+    const double s_min = get_parameter("model_error.scalar_min").as_double();
+    const double s_max = get_parameter("model_error.scalar_max").as_double();
+    const double p_min = get_parameter("model_error.per_link_min").as_double();
+    const double p_max = get_parameter("model_error.per_link_max").as_double();
+    const int64_t seed = get_parameter("model_error.seed").as_int();
+
+    if (s_min <= 0.0 || s_max < s_min) {
+        throw std::invalid_argument(
+            "model_error.scalar_{min,max}: both must be > 0 and min <= max");
+    }
+    if (p_min <= 0.0 || p_max < p_min) {
+        throw std::invalid_argument(
+            "model_error.per_link_{min,max}: both must be > 0 and min <= max");
+    }
+
+    std::mt19937_64 rng(static_cast<uint64_t>(seed));
+    std::uniform_real_distribution<double> scalar_dist(s_min, s_max);
+    std::uniform_real_distribution<double> per_link_dist(p_min, p_max);
+
+    phantom_model::ModelErrors errors;
+    errors.scalar_scale = scalar_dist(rng);
+    for (int i = 0; i < 5; ++i) {
+        errors.per_link_scale[i] = per_link_dist(rng);
+    }
+
+    RCLCPP_INFO(get_logger(),
+        "model_error: k_global=%.4f, k_link=[%.4f %.4f %.4f %.4f %.4f], "
+        "seed=%lld  (ranges: scalar=[%.3f,%.3f], per_link=[%.3f,%.3f])",
+        errors.scalar_scale,
+        errors.per_link_scale[0], errors.per_link_scale[1],
+        errors.per_link_scale[2], errors.per_link_scale[3],
+        errors.per_link_scale[4],
+        static_cast<long long>(seed),
+        s_min, s_max, p_min, p_max);
+
+    model_ = std::make_unique<phantom_model::RobotModel>(cfg, errors);
 
     // Subscribe to joint states
     js_sub_ = create_subscription<sensor_msgs::msg::JointState>(
