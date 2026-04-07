@@ -12,40 +12,39 @@ find_package(ament_index_cpp REQUIRED)
 find_package(phantom_model REQUIRED)
 find_package(Eigen3 REQUIRED)
 
-# --- Base controller library --------------------------------------------------
-add_library(base_controller SHARED
-    src/base_controller.cpp
+# --- Vanilla BaseController executable ---------------------------------------
+# `BaseController` is header-only (see include/phantom_controllers/base_controller.hpp).
+# Each executable that uses it just includes the header and links the
+# transitive dependencies directly — no shared library is needed.  Toggle
+# gravity compensation via the `gravity_compensation` ROS parameter.
+add_executable(base_controller_node src/base_controller_node.cpp)
+target_include_directories(base_controller_node PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
-target_include_directories(base_controller PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
-)
-target_link_libraries(base_controller
+target_link_libraries(base_controller_node
     phantom_model::robot_model
     Eigen3::Eigen
 )
-ament_target_dependencies(base_controller
+ament_target_dependencies(base_controller_node
     rclcpp std_msgs sensor_msgs ament_index_cpp)
 
-# --- Gravity compensation controller -----------------------------------------
-add_executable(gravity_comp_node src/gravity_comp_node.cpp)
-target_link_libraries(gravity_comp_node base_controller)
-ament_target_dependencies(gravity_comp_node rclcpp)
-
 # --- Install ------------------------------------------------------------------
-install(TARGETS gravity_comp_node
+install(TARGETS base_controller_node
         DESTINATION lib/${PROJECT_NAME})
-
-install(TARGETS base_controller
-        DESTINATION lib
-        EXPORT phantom_controllers_targets)
 
 install(DIRECTORY include/
         DESTINATION include)
 
-install(EXPORT phantom_controllers_targets
-        FILE phantom_controllersTargets.cmake
-        NAMESPACE phantom_controllers::
-        DESTINATION lib/cmake/${PROJECT_NAME})
+# Header-only — let downstream packages (and future controllers in this
+# package) get the include dir + transitive deps via find_package().
+ament_export_include_directories(include)
+ament_export_dependencies(
+    rclcpp
+    std_msgs
+    sensor_msgs
+    ament_index_cpp
+    phantom_model
+    Eigen3
+)
 
 ament_package()

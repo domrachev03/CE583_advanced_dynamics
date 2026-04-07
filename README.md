@@ -25,7 +25,7 @@ where D, C, G are built symbolically using CasADi with automatic differentiation
 | Node | Package | Description | Rate |
 |------|---------|-------------|------|
 | `simulator_node` | `phantom_sim` | RK4 integration on a dedicated CPU core | 5 kHz integration, 1 kHz publishing |
-| `gravity_comp_node` | `phantom_controllers` | Gravity compensation controller | 1 kHz |
+| `base_controller_node` | `phantom_controllers` | Vanilla `BaseController` (zero torque + optional gravity compensation via `gravity_compensation` param) | 1 kHz |
 
 ### Topics
 
@@ -114,10 +114,9 @@ phantom_sim/
 │   └── rviz/phantom.rviz             # TF tree display config
 └── src/phantom_controllers/           # Controllers package
     ├── include/phantom_controllers/
-    │   └── base_controller.hpp        # Extensible base class
+    │   └── base_controller.hpp        # Header-only base class (subscriptions, timers, gravity comp toggle)
     └── src/
-        ├── base_controller.cpp        # Base: subscriptions, timers, gravity comp
-        └── gravity_comp_node.cpp      # Example: pure gravity compensation
+        └── base_controller_node.cpp   # main() — spins a vanilla BaseController
 ```
 
 ## Writing Custom Controllers

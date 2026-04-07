@@ -11,7 +11,8 @@ scripts = ["scripts/activate.sh", "install/setup.sh"]
 [tasks]
 build = { cmd = "colcon build --symlink-install --cmake-args -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && python scripts/merge_compile_commands.py", inputs = ["src"], outputs = ["build", "install", "compile_commands.json"] }
 sim = {cmd = "pixi run ros2 run phantom_sim simulator_node", depends-on = ["build"] }
-gravity_comp = {cmd = "ros2 run phantom_controllers gravity_comp_node", depends-on = ["build"]}
+controller = {cmd = "ros2 run phantom_controllers base_controller_node", depends-on = ["build"]}
+gravity_comp = {cmd = "ros2 run phantom_controllers base_controller_node --ros-args -p gravity_compensation:=true", depends-on = ["build"]}
 rviz = { cmd = "ros2 run rviz2 rviz2 -d install/phantom_sim/share/phantom_sim/rviz/phantom.rviz", depends-on = ["build"]}
 plot = { cmd = "ros2 run plotjuggler plotjuggler --layout install/phantom_sim/share/phantom_sim/plotjuggler/joint_states.xml", depends-on = ["build"]}
 all = { cmd = "ros2 launch phantom_sim sim.launch.py", depends-on = ["build"] }

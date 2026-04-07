@@ -13,9 +13,12 @@ def generate_launch_description():
     return LaunchDescription([
         Node(
             package="phantom_controllers",
-            executable="gravity_comp_node",
+            executable="base_controller_node",
             name="gravity_compensator",
-            parameters=[{"config_file": config}],
+            parameters=[{
+                "config_file": config,
+                "gravity_compensation": True,
+            }],
             output="screen",
         ),
         Node(
