@@ -13,8 +13,8 @@ public:
     }
 
 protected:
-    std::array<double, 3> compute_torque() override {
-        return {0.0, 0.0, 0.0};
+    Eigen::Vector3d compute_torque() override {
+        return Eigen::Vector3d::Zero();
     }
 };
 

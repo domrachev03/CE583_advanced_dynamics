@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(ament_cmake REQUIRED)
 find_package(yaml-cpp REQUIRED)
+find_package(Eigen3 REQUIRED)
 
 # --- CasADi ------------------------------------------------------------------
 find_package(casadi QUIET CONFIG)
@@ -36,6 +37,7 @@ target_include_directories(robot_model PUBLIC
 target_link_libraries(robot_model
     casadi::casadi
     yaml-cpp::yaml-cpp
+    Eigen3::Eigen
 )
 
 # --- Install ------------------------------------------------------------------
@@ -55,7 +57,7 @@ install(EXPORT phantom_model_targets
         DESTINATION lib/cmake/${PROJECT_NAME})
 
 ament_export_targets(phantom_model_targets HAS_LIBRARY_TARGET)
-ament_export_dependencies(casadi yaml-cpp)
+ament_export_dependencies(casadi yaml-cpp Eigen3)
 ament_export_include_directories(include)
 
 ament_package()

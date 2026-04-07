@@ -26,14 +26,14 @@ void RobotModel::load_params(const std::string& config_path) {
 
     // Gravity
     for (int i = 0; i < 3; ++i)
-        gravity_[i] = ph["gravity"][i].as<double>();
+        gravity_(i) = ph["gravity"][i].as<double>();
 
-    // Damping (optional, defaults to zero)
-    int ndof = ph["dof"].as<int>(3);
-    damping_.resize(ndof, 0.0);
+    // Damping (optional, defaults to zero). The robot is fixed at 3 DOF,
+    // so damping_ is always a Vector3d.
+    damping_.setZero();
     if (ph["damping"]) {
-        for (int i = 0; i < ndof; ++i)
-            damping_[i] = ph["damping"][i].as<double>();
+        for (int i = 0; i < 3; ++i)
+            damping_(i) = ph["damping"][i].as<double>();
     }
 
     // Kinematics
@@ -51,12 +51,11 @@ void RobotModel::load_params(const std::string& config_path) {
         auto lk = ph["links"][name];
         links_[n].mass = lk["mass"].as<double>();
         for (int j = 0; j < 3; ++j)
-            links_[n].com[j] = lk["com"][j].as<double>();
+            links_[n].com(j) = lk["com"][j].as<double>();
         for (int r = 0; r < 3; ++r)
             for (int c = 0; c < 3; ++c)
-                links_[n].inertia[r][c] = lk["inertia"][r][c].as<double>();
+                links_[n].inertia(r, c) = lk["inertia"][r][c].as<double>();
     }
-
 }
 
 // ===========================================================================
@@ -87,16 +86,15 @@ SX RobotModel::make_transform(const SX& R, const SX& t) {
     return T;
 }
 
-SX RobotModel::make_translation(const std::array<double, 3>& v) {
-    return SX::vertcat({v[0], v[1], v[2]});
+SX RobotModel::make_translation(const Eigen::Vector3d& v) {
+    return SX::vertcat({v(0), v(1), v(2)});
 }
 
-SX RobotModel::make_inertia(
-    const std::array<std::array<double, 3>, 3>& I) {
+SX RobotModel::make_inertia(const Eigen::Matrix3d& I) {
     SX M = SX::zeros(3, 3);
     for (int r = 0; r < 3; ++r)
         for (int c = 0; c < 3; ++c)
-            M(r, c) = I[r][c];
+            M(r, c) = I(r, c);
     return M;
 }
 
@@ -277,48 +275,74 @@ void RobotModel::build_model() {
 // ===========================================================================
 // Public evaluation wrappers
 // ===========================================================================
-std::vector<double> RobotModel::forward_dynamics(
-    const std::vector<double>& q,
-    const std::vector<double>& dq,
-    const std::vector<double>& tau) const {
-    std::vector<DM> args = {DM(q), DM(dq), DM(tau)};
+// CasADi <-> Eigen bridge.
+//
+// Both CasADi DM (dense) and Eigen (by default) store data in column-major
+// order, so we can Eigen::Map directly over DM::ptr() after densifying.
+// Densification is necessary because CasADi may mark structurally-zero
+// entries as missing; without it, ptr() would not cover every cell.
+namespace {
+
+inline DM to_dm(const Eigen::Vector3d& v) {
+    return DM(std::vector<double>{v(0), v(1), v(2)});
+}
+
+inline Eigen::Vector3d to_vec3(const DM& dm) {
+    DM dense = DM::densify(dm);
+    return Eigen::Map<const Eigen::Vector3d>(dense.ptr());
+}
+
+inline Eigen::Matrix3d to_mat3(const DM& dm) {
+    DM dense = DM::densify(dm);
+    return Eigen::Map<const Eigen::Matrix3d>(dense.ptr());
+}
+
+inline Eigen::Matrix4d to_mat4(const DM& dm) {
+    DM dense = DM::densify(dm);
+    return Eigen::Map<const Eigen::Matrix4d>(dense.ptr());
+}
+
+}  // namespace
+
+Eigen::Vector3d RobotModel::forward_dynamics(
+    const Eigen::Vector3d& q,
+    const Eigen::Vector3d& dq,
+    const Eigen::Vector3d& tau) const {
+    std::vector<DM> args = {to_dm(q), to_dm(dq), to_dm(tau)};
     auto res = fwd_dyn_fn_(args);
-    return res.at(0).nonzeros();
+    return to_vec3(res.at(0));
 }
 
-std::vector<double> RobotModel::inertia_matrix(
-    const std::vector<double>& q) const {
-    std::vector<DM> args = {DM(q)};
+Eigen::Matrix3d RobotModel::inertia_matrix(const Eigen::Vector3d& q) const {
+    std::vector<DM> args = {to_dm(q)};
     auto res = inertia_fn_(args);
-    return res.at(0).nonzeros();
+    return to_mat3(res.at(0));
 }
 
-std::vector<double> RobotModel::coriolis_matrix(
-    const std::vector<double>& q,
-    const std::vector<double>& dq) const {
-    std::vector<DM> args = {DM(q), DM(dq)};
+Eigen::Matrix3d RobotModel::coriolis_matrix(
+    const Eigen::Vector3d& q,
+    const Eigen::Vector3d& dq) const {
+    std::vector<DM> args = {to_dm(q), to_dm(dq)};
     auto res = coriolis_fn_(args);
-    return res.at(0).nonzeros();
+    return to_mat3(res.at(0));
 }
 
-std::vector<double> RobotModel::gravity_vector(
-    const std::vector<double>& q) const {
-    std::vector<DM> args = {DM(q)};
+Eigen::Vector3d RobotModel::gravity_vector(const Eigen::Vector3d& q) const {
+    std::vector<DM> args = {to_dm(q)};
     auto res = gravity_fn_(args);
-    return res.at(0).nonzeros();
+    return to_vec3(res.at(0));
 }
 
-std::vector<std::array<double, 16>> RobotModel::forward_kinematics(
-    const std::vector<double>& q) const {
-    std::vector<DM> args = {DM(q)};
+std::array<Eigen::Matrix4d, 6> RobotModel::forward_kinematics(
+    const Eigen::Vector3d& q) const {
+    std::vector<DM> args = {to_dm(q)};
     auto res = fk_fn_(args);
-    const int nt = static_cast<int>(res.size());
-    std::vector<std::array<double, 16>> out(nt);
-    for (int i = 0; i < nt; ++i) {
-        // densify: CasADi may mark constant entries as structural zeros
-        DM dense = DM::densify(res.at(i));
-        auto v = dense.nonzeros();
-        std::copy(v.begin(), v.end(), out[i].begin());
+    std::array<Eigen::Matrix4d, 6> out;
+    for (int i = 0; i < 6; ++i) {
+        // fk_fn_ returns each frame as reshape(T, 16, 1): a column-major
+        // layout of the 4x4 transform, so Eigen::Map<Matrix4d> reconstructs
+        // the original 4x4.
+        out[i] = to_mat4(res.at(i));
     }
     return out;
 }

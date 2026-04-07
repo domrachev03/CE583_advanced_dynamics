@@ -35,11 +35,11 @@ void BaseController::joint_state_callback(
     const sensor_msgs::msg::JointState::SharedPtr msg) {
     std::lock_guard<std::mutex> lk(state_mu_);
     for (size_t i = 0; i < 3 && i < msg->position.size(); ++i)
-        q_[i] = msg->position[i];
+        q_(i) = msg->position[i];
     for (size_t i = 0; i < 3 && i < msg->velocity.size(); ++i)
-        dq_[i] = msg->velocity[i];
+        dq_(i) = msg->velocity[i];
     for (size_t i = 0; i < 3 && i < msg->effort.size(); ++i)
-        effort_[i] = msg->effort[i];
+        effort_(i) = msg->effort[i];
     has_state_.store(true, std::memory_order_release);
 }
 
@@ -52,33 +52,30 @@ void BaseController::control_tick() {
     }
 
     // Ask subclass for torque
-    auto tau = compute_torque();
+    Eigen::Vector3d tau = compute_torque();
 
     // Optionally add gravity compensation
     if (use_gravity_comp_) {
-        auto q = get_q();
-        auto G = model_->gravity_vector({q[0], q[1], q[2]});
-        for (int i = 0; i < 3; ++i)
-            tau[i] += G[i];
+        tau += model_->gravity_vector(get_q());
     }
 
     // Publish
     std_msgs::msg::Float64MultiArray msg;
-    msg.data = {tau[0], tau[1], tau[2]};
+    msg.data = {tau(0), tau(1), tau(2)};
     tau_pub_->publish(msg);
 }
 
-std::array<double, 3> BaseController::get_q() const {
+Eigen::Vector3d BaseController::get_q() const {
     std::lock_guard<std::mutex> lk(state_mu_);
     return q_;
 }
 
-std::array<double, 3> BaseController::get_dq() const {
+Eigen::Vector3d BaseController::get_dq() const {
     std::lock_guard<std::mutex> lk(state_mu_);
     return dq_;
 }
 
-std::array<double, 3> BaseController::get_effort() const {
+Eigen::Vector3d BaseController::get_effort() const {
     std::lock_guard<std::mutex> lk(state_mu_);
     return effort_;
 }

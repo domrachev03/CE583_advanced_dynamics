@@ -1,9 +1,11 @@
-#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <mutex>
 #include <thread>
+
+#include <Eigen/Dense>
+#include <Eigen/Geometry>
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
@@ -15,42 +17,6 @@
 #include "phantom_model/robot_model.hpp"
 
 namespace phantom_sim {
-
-// Column-major 4x4 -> quaternion  (Shepperd's method)
-static geometry_msgs::msg::Quaternion mat_to_quat(const double* T) {
-    double r00 = T[0], r10 = T[1], r20 = T[2];
-    double r01 = T[4], r11 = T[5], r21 = T[6];
-    double r02 = T[8], r12 = T[9], r22 = T[10];
-
-    geometry_msgs::msg::Quaternion quat;
-    double tr = r00 + r11 + r22;
-    if (tr > 0) {
-        double s = 0.5 / std::sqrt(tr + 1.0);
-        quat.w = 0.25 / s;
-        quat.x = (r21 - r12) * s;
-        quat.y = (r02 - r20) * s;
-        quat.z = (r10 - r01) * s;
-    } else if (r00 > r11 && r00 > r22) {
-        double s = 2.0 * std::sqrt(1.0 + r00 - r11 - r22);
-        quat.w = (r21 - r12) / s;
-        quat.x = 0.25 * s;
-        quat.y = (r01 + r10) / s;
-        quat.z = (r02 + r20) / s;
-    } else if (r11 > r22) {
-        double s = 2.0 * std::sqrt(1.0 + r11 - r00 - r22);
-        quat.w = (r02 - r20) / s;
-        quat.x = (r01 + r10) / s;
-        quat.y = 0.25 * s;
-        quat.z = (r12 + r21) / s;
-    } else {
-        double s = 2.0 * std::sqrt(1.0 + r22 - r00 - r11);
-        quat.w = (r10 - r01) / s;
-        quat.x = (r02 + r20) / s;
-        quat.y = (r12 + r21) / s;
-        quat.z = 0.25 * s;
-    }
-    return quat;
-}
 
 class SimulatorNode : public rclcpp::Node {
 public:
@@ -89,7 +55,7 @@ public:
             [this](const std_msgs::msg::Float64MultiArray::SharedPtr msg) {
                 std::lock_guard<std::mutex> lk(tau_mu_);
                 for (size_t i = 0; i < 3 && i < msg->data.size(); ++i)
-                    tau_[i] = msg->data[i];
+                    tau_(i) = msg->data[i];
                 torque_received_.store(true, std::memory_order_release);
             });
 
@@ -133,97 +99,87 @@ private:
     // Update velocity first, then use the NEW velocity to advance position.
     // This preserves a modified energy, preventing numerical energy drift
     // that causes undamped systems to diverge.
-    void euler_step(const std::array<double, 3>& tau) {
-        std::vector<double> qv(q_.begin(), q_.end());
-        std::vector<double> dqv(dq_.begin(), dq_.end());
-
-        auto ddq = model_->forward_dynamics(qv, dqv,
-                       {tau[0], tau[1], tau[2]});
-
-        std::lock_guard<std::mutex> lk(state_mu_);
-        for (int i = 0; i < 3; ++i) {
-            dq_[i] += dt_ * ddq[i];   // velocity first (using old q)
-            q_[i]  += dt_ * dq_[i];   // position with NEW velocity
-        }
-    }
-
-    // ---- RK4 step (called only from integration thread) --------------------
-    void rk4_step(const std::array<double, 3>& tau) {
-        auto eval = [&](const std::vector<double>& qv,
-                        const std::vector<double>& dqv) {
-            return model_->forward_dynamics(qv, dqv,
-                       {tau[0], tau[1], tau[2]});
-        };
-
-        std::vector<double> qv(q_.begin(), q_.end());
-        std::vector<double> dqv(dq_.begin(), dq_.end());
-
-        auto ddq1 = eval(qv, dqv);
-
-        std::vector<double> q2(3), dq2(3);
-        for (int i = 0; i < 3; ++i) {
-            q2[i]  = qv[i]  + dt_ / 2 * dqv[i];
-            dq2[i] = dqv[i] + dt_ / 2 * ddq1[i];
-        }
-        auto ddq2 = eval(q2, dq2);
-
-        std::vector<double> q3(3), dq3(3);
-        for (int i = 0; i < 3; ++i) {
-            q3[i]  = qv[i]  + dt_ / 2 * dq2[i];
-            dq3[i] = dqv[i] + dt_ / 2 * ddq2[i];
-        }
-        auto ddq3 = eval(q3, dq3);
-
-        std::vector<double> q4(3), dq4(3);
-        for (int i = 0; i < 3; ++i) {
-            q4[i]  = qv[i]  + dt_ * dq3[i];
-            dq4[i] = dqv[i] + dt_ * ddq3[i];
-        }
-        auto ddq4 = eval(q4, dq4);
-
-        // Write new state under lock
-        {
-            std::lock_guard<std::mutex> lk(state_mu_);
-            for (int i = 0; i < 3; ++i) {
-                q_[i]  = qv[i]  + dt_ / 6 * (dqv[i]  + 2*dq2[i]  + 2*dq3[i]  + dq4[i]);
-                dq_[i] = dqv[i] + dt_ / 6 * (ddq1[i] + 2*ddq2[i] + 2*ddq3[i] + ddq4[i]);
-            }
-        }
-    }
-
-    // ---- Publishing (called by executor timer threads) ---------------------
-    void publish_state() {
-        std::array<double, 3> q, dq;
+    void euler_step(const Eigen::Vector3d& tau) {
+        Eigen::Vector3d q, dq;
         {
             std::lock_guard<std::mutex> lk(state_mu_);
             q  = q_;
             dq = dq_;
         }
 
+        Eigen::Vector3d ddq = model_->forward_dynamics(q, dq, tau);
+
+        std::lock_guard<std::mutex> lk(state_mu_);
+        dq_ = dq + dt_ * ddq;   // velocity first (using old q)
+        q_  = q  + dt_ * dq_;   // position with NEW velocity
+    }
+
+    // ---- RK4 step (called only from integration thread) --------------------
+    void rk4_step(const Eigen::Vector3d& tau) {
+        Eigen::Vector3d q, dq;
+        {
+            std::lock_guard<std::mutex> lk(state_mu_);
+            q  = q_;
+            dq = dq_;
+        }
+
+        auto eval = [&](const Eigen::Vector3d& qv, const Eigen::Vector3d& dqv) {
+            return model_->forward_dynamics(qv, dqv, tau);
+        };
+
+        Eigen::Vector3d k1 = eval(q, dq);
+
+        Eigen::Vector3d q2  = q  + (dt_ / 2) * dq;
+        Eigen::Vector3d dq2 = dq + (dt_ / 2) * k1;
+        Eigen::Vector3d k2  = eval(q2, dq2);
+
+        Eigen::Vector3d q3  = q  + (dt_ / 2) * dq2;
+        Eigen::Vector3d dq3 = dq + (dt_ / 2) * k2;
+        Eigen::Vector3d k3  = eval(q3, dq3);
+
+        Eigen::Vector3d q4  = q  + dt_ * dq3;
+        Eigen::Vector3d dq4 = dq + dt_ * k3;
+        Eigen::Vector3d k4  = eval(q4, dq4);
+
+        std::lock_guard<std::mutex> lk(state_mu_);
+        q_  = q  + (dt_ / 6) * (dq  + 2 * dq2 + 2 * dq3 + dq4);
+        dq_ = dq + (dt_ / 6) * (k1  + 2 * k2  + 2 * k3  + k4);
+    }
+
+    // ---- Publishing (called by executor timer threads) ---------------------
+    void publish_state() {
+        Eigen::Vector3d q, dq, tau;
+        {
+            std::lock_guard<std::mutex> lk(state_mu_);
+            q  = q_;
+            dq = dq_;
+        }
+        {
+            std::lock_guard<std::mutex> lk(tau_mu_);
+            tau = tau_;
+        }
+
         auto msg = sensor_msgs::msg::JointState();
         msg.header.stamp = now();
         msg.name     = {"joint1", "joint2", "joint3", "joint4", "joint5"};
-        msg.position = {q[0], q[1], q[2],
-                        M_PI / 2 - q[1] + q[2],
-                        M_PI / 2 + q[1] - q[2]};
-        msg.velocity = {dq[0], dq[1], dq[2],
-                        -dq[1] + dq[2],
-                         dq[1] - dq[2]};
-        {
-            std::lock_guard<std::mutex> lk(tau_mu_);
-            msg.effort = {tau_[0], tau_[1], tau_[2], 0.0, 0.0};
-        }
+        msg.position = {q(0), q(1), q(2),
+                        M_PI / 2 - q(1) + q(2),
+                        M_PI / 2 + q(1) - q(2)};
+        msg.velocity = {dq(0), dq(1), dq(2),
+                        -dq(1) + dq(2),
+                         dq(1) - dq(2)};
+        msg.effort   = {tau(0), tau(1), tau(2), 0.0, 0.0};
         js_pub_->publish(msg);
     }
 
     void publish_tf() {
-        std::array<double, 3> q;
+        Eigen::Vector3d q;
         {
             std::lock_guard<std::mutex> lk(state_mu_);
             q = q_;
         }
 
-        auto transforms = model_->forward_kinematics({q[0], q[1], q[2]});
+        auto transforms = model_->forward_kinematics(q);
 
         static const std::pair<std::string, std::string> frames[] = {
             {"base_link", "link1"},
@@ -241,11 +197,18 @@ private:
             ts.header.frame_id = frames[i].first;
             ts.child_frame_id  = frames[i].second;
 
-            const auto& T = transforms[i];
-            ts.transform.translation.x = T[12];
-            ts.transform.translation.y = T[13];
-            ts.transform.translation.z = T[14];
-            ts.transform.rotation      = mat_to_quat(T.data());
+            const Eigen::Matrix4d& T = transforms[i];
+            const Eigen::Vector3d t = T.block<3, 1>(0, 3);
+            const Eigen::Quaterniond quat(
+                Eigen::Matrix3d(T.block<3, 3>(0, 0)));
+
+            ts.transform.translation.x = t.x();
+            ts.transform.translation.y = t.y();
+            ts.transform.translation.z = t.z();
+            ts.transform.rotation.x    = quat.x();
+            ts.transform.rotation.y    = quat.y();
+            ts.transform.rotation.z    = quat.z();
+            ts.transform.rotation.w    = quat.w();
 
             tf_bc_->sendTransform(ts);
         }
@@ -277,7 +240,7 @@ private:
 
         while (running_.load(std::memory_order_relaxed)) {
             // Read torque
-            std::array<double, 3> tau{};
+            Eigen::Vector3d tau;
             {
                 std::lock_guard<std::mutex> lk(tau_mu_);
                 tau = tau_;
@@ -303,7 +266,7 @@ private:
                 double rk4_avg  = rk4_accum_us / stats_steps;
                 double rt_ratio = (stats_steps * dt_) / elapsed;
 
-                std::array<double, 3> q;
+                Eigen::Vector3d q;
                 {
                     std::lock_guard<std::mutex> lk(state_mu_);
                     q = q_;
@@ -312,7 +275,7 @@ private:
                 RCLCPP_INFO(get_logger(),
                     "sim=%.0f Hz (%.2fx RT) | rk4=%.0f us/step | "
                     "q=[%.3f, %.3f, %.3f]",
-                    sim_hz, rt_ratio, rk4_avg, q[0], q[1], q[2]);
+                    sim_hz, rt_ratio, rk4_avg, q(0), q(1), q(2));
 
                 stats_start  = now_t;
                 stats_steps  = 0;
@@ -337,12 +300,12 @@ private:
     Integrator integrator_{Integrator::RK4};
 
     // State: written by integration thread, read by timer callbacks
-    std::array<double, 3> q_  = {0, 0, 0};
-    std::array<double, 3> dq_ = {0, 0, 0};
+    Eigen::Vector3d q_  {Eigen::Vector3d::Zero()};
+    Eigen::Vector3d dq_ {Eigen::Vector3d::Zero()};
     std::mutex state_mu_;
 
     // Torque input: written by subscription callback, read by integration thread
-    std::array<double, 3> tau_ = {0, 0, 0};
+    Eigen::Vector3d tau_{Eigen::Vector3d::Zero()};
     std::mutex tau_mu_;
 
     // ROS I/O

@@ -10,6 +10,7 @@ find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 find_package(phantom_model REQUIRED)
+find_package(Eigen3 REQUIRED)
 
 # --- Base controller library --------------------------------------------------
 add_library(base_controller SHARED
@@ -21,6 +22,7 @@ target_include_directories(base_controller PUBLIC
 )
 target_link_libraries(base_controller
     phantom_model::robot_model
+    Eigen3::Eigen
 )
 ament_target_dependencies(base_controller
     rclcpp std_msgs sensor_msgs ament_index_cpp)

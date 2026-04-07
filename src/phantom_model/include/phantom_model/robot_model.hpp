@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include <Eigen/Dense>
 #include <casadi/casadi.hpp>
 
 namespace phantom_model {
@@ -12,10 +13,10 @@ namespace phantom_model {
 // Data read from the YAML config
 // ---------------------------------------------------------------------------
 struct LinkParams {
-    std::string name;
-    double mass;
-    std::array<double, 3> com;                      // m, body frame
-    std::array<std::array<double, 3>, 3> inertia;   // kg*m^2, body frame
+    std::string     name;
+    double          mass;       // kg
+    Eigen::Vector3d com;        // m, body frame
+    Eigen::Matrix3d inertia;    // kg*m^2, body frame
 };
 
 struct KinematicParams {
@@ -33,28 +34,25 @@ public:
     explicit RobotModel(const std::string& config_path);
 
     /// Forward dynamics:  ddq = D^{-1}(tau - C dq - G)
-    std::vector<double> forward_dynamics(
-        const std::vector<double>& q,
-        const std::vector<double>& dq,
-        const std::vector<double>& tau) const;
+    Eigen::Vector3d forward_dynamics(
+        const Eigen::Vector3d& q,
+        const Eigen::Vector3d& dq,
+        const Eigen::Vector3d& tau) const;
 
-    /// Inertia matrix  D(q)  (n x n, row-major flattened)
-    std::vector<double> inertia_matrix(
-        const std::vector<double>& q) const;
+    /// Inertia matrix  D(q)
+    Eigen::Matrix3d inertia_matrix(const Eigen::Vector3d& q) const;
 
-    /// Coriolis/centrifugal matrix  C(q, dq)  (n x n, row-major flattened)
-    std::vector<double> coriolis_matrix(
-        const std::vector<double>& q,
-        const std::vector<double>& dq) const;
+    /// Coriolis/centrifugal matrix  C(q, dq)
+    Eigen::Matrix3d coriolis_matrix(const Eigen::Vector3d& q,
+                                    const Eigen::Vector3d& dq) const;
 
-    /// Gravity vector  G(q)  (n x 1)
-    std::vector<double> gravity_vector(
-        const std::vector<double>& q) const;
+    /// Gravity vector  G(q)
+    Eigen::Vector3d gravity_vector(const Eigen::Vector3d& q) const;
 
-    /// Relative transforms for TF publishing (column-major 4x4).
-    /// Order: T_01, T_12, T_13, T_24, T_35.
-    std::vector<std::array<double, 16>> forward_kinematics(
-        const std::vector<double>& q) const;
+    /// Relative transforms for TF publishing.
+    /// Order: T_01, T_12, T_13, T_24, T_35, T_46.
+    std::array<Eigen::Matrix4d, 6> forward_kinematics(
+        const Eigen::Vector3d& q) const;
 
     int  ndof()   const { return 3; }
     int  nlinks() const { return 5; }
@@ -71,22 +69,21 @@ private:
     static casadi::SX rot_x(double angle);
     static casadi::SX make_transform(const casadi::SX& R,
                                      const casadi::SX& t);
-    static casadi::SX make_translation(const std::array<double, 3>& t);
-    static casadi::SX make_inertia(
-        const std::array<std::array<double, 3>, 3>& I);
+    static casadi::SX make_translation(const Eigen::Vector3d& t);
+    static casadi::SX make_inertia(const Eigen::Matrix3d& I);
 
     // ------ Compiled CasADi functions ---------------------------------------
     casadi::Function fwd_dyn_fn_;   // (q, dq, tau) -> ddq
-    casadi::Function inertia_fn_;   // (q)          -> D (n x n)
-    casadi::Function coriolis_fn_;  // (q, dq)      -> C (n x n)
-    casadi::Function gravity_fn_;   // (q)          -> G
-    casadi::Function fk_fn_;        // (q)          -> 5 x vec16
+    casadi::Function inertia_fn_;   // (q)          -> D (3x3)
+    casadi::Function coriolis_fn_;  // (q, dq)      -> C (3x3)
+    casadi::Function gravity_fn_;   // (q)          -> G (3x1)
+    casadi::Function fk_fn_;        // (q)          -> 6 x (4x4)
 
     // ------ Parameters loaded from YAML -------------------------------------
     std::vector<LinkParams> links_;
     KinematicParams kin_params_{};
-    std::array<double, 3> gravity_{};
-    std::vector<double> damping_;  // per-joint viscous damping
+    Eigen::Vector3d gravity_{Eigen::Vector3d::Zero()};
+    Eigen::Vector3d damping_{Eigen::Vector3d::Zero()};  // per-joint viscous damping
 };
 
 }  // namespace phantom_model

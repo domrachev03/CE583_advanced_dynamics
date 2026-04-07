@@ -1,9 +1,9 @@
 #pragma once
 
-#include <array>
 #include <mutex>
 #include <string>
-#include <vector>
+
+#include <Eigen/Dense>
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
@@ -35,20 +35,20 @@ protected:
     // ---- Override this in your controller ----------------------------------
 
     /// Compute the control torque (3 DOF).
-    /// Called at the configured rate. Return {0,0,0} for zero torque.
+    /// Called at the configured rate. Return Vector3d::Zero() for zero torque.
     /// Gravity compensation (if enabled) is added automatically after this.
-    virtual std::array<double, 3> compute_torque() = 0;
+    virtual Eigen::Vector3d compute_torque() = 0;
 
     // ---- State accessors (thread-safe snapshots) ---------------------------
 
     /// Current joint positions [rad] (3 actuated DOF)
-    std::array<double, 3> get_q() const;
+    Eigen::Vector3d get_q() const;
 
     /// Current joint velocities [rad/s] (3 actuated DOF)
-    std::array<double, 3> get_dq() const;
+    Eigen::Vector3d get_dq() const;
 
     /// Current applied torque [N*m] (3 actuated DOF)
-    std::array<double, 3> get_effort() const;
+    Eigen::Vector3d get_effort() const;
 
     /// Whether at least one joint state has been received
     bool has_state() const { return has_state_.load(std::memory_order_acquire); }
@@ -72,9 +72,9 @@ private:
     std::unique_ptr<phantom_model::RobotModel> model_;
 
     // Latest robot state (written by subscription, read by timer + subclass)
-    std::array<double, 3> q_      = {0, 0, 0};
-    std::array<double, 3> dq_     = {0, 0, 0};
-    std::array<double, 3> effort_ = {0, 0, 0};
+    Eigen::Vector3d q_      {Eigen::Vector3d::Zero()};
+    Eigen::Vector3d dq_     {Eigen::Vector3d::Zero()};
+    Eigen::Vector3d effort_ {Eigen::Vector3d::Zero()};
     mutable std::mutex state_mu_;
     std::atomic<bool> has_state_{false};
 
