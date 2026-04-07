@@ -59,9 +59,11 @@ public:
                 torque_received_.store(true, std::memory_order_release);
             });
 
-        js_pub_ = create_publisher<sensor_msgs::msg::JointState>(
+        js_pub_    = create_publisher<sensor_msgs::msg::JointState>(
             "phantom/joint_states", rclcpp::SensorDataQoS());
-        tf_bc_  = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+        accel_pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(
+            "phantom/joint_accel", rclcpp::SensorDataQoS());
+        tf_bc_     = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
         // --- Publishing timer (runs on executor thread, not integration thread) ---
         auto pub_period = std::chrono::nanoseconds(
@@ -110,8 +112,9 @@ private:
         Eigen::Vector3d ddq = model_->forward_dynamics(q, dq, tau);
 
         std::lock_guard<std::mutex> lk(state_mu_);
-        dq_ = dq + dt_ * ddq;   // velocity first (using old q)
-        q_  = q  + dt_ * dq_;   // position with NEW velocity
+        ddq_ = ddq;             // snapshot for /phantom/joint_accel
+        dq_  = dq + dt_ * ddq;  // velocity first (using old q)
+        q_   = q  + dt_ * dq_;  // position with NEW velocity
     }
 
     // ---- RK4 step (called only from integration thread) --------------------
@@ -142,17 +145,25 @@ private:
         Eigen::Vector3d k4  = eval(q4, dq4);
 
         std::lock_guard<std::mutex> lk(state_mu_);
-        q_  = q  + (dt_ / 6) * (dq  + 2 * dq2 + 2 * dq3 + dq4);
-        dq_ = dq + (dt_ / 6) * (k1  + 2 * k2  + 2 * k3  + k4);
+        // k1 is the acceleration at the START of the integration step,
+        // i.e. the ddq that corresponds to the (q, dq) about to be
+        // overwritten.  Publishing it alongside the (q, dq) snapshot on
+        // the same tick gives subscribers a self-consistent (q, dq, ddq)
+        // triple.  Using the RK4-weighted average would drift from this
+        // interpretation without any real accuracy benefit at dt=2e-4.
+        ddq_ = k1;
+        q_   = q  + (dt_ / 6) * (dq  + 2 * dq2 + 2 * dq3 + dq4);
+        dq_  = dq + (dt_ / 6) * (k1  + 2 * k2  + 2 * k3  + k4);
     }
 
     // ---- Publishing (called by executor timer threads) ---------------------
     void publish_state() {
-        Eigen::Vector3d q, dq, tau;
+        Eigen::Vector3d q, dq, ddq, tau;
         {
             std::lock_guard<std::mutex> lk(state_mu_);
-            q  = q_;
-            dq = dq_;
+            q   = q_;
+            dq  = dq_;
+            ddq = ddq_;
         }
         {
             std::lock_guard<std::mutex> lk(tau_mu_);
@@ -170,6 +181,12 @@ private:
                          dq(1) - dq(2)};
         msg.effort   = {tau(0), tau(1), tau(2), 0.0, 0.0};
         js_pub_->publish(msg);
+
+        // Acceleration of the 3 actuated DOF on a dedicated topic — kept
+        // separate because sensor_msgs/JointState has no acceleration field.
+        std_msgs::msg::Float64MultiArray accel_msg;
+        accel_msg.data = {ddq(0), ddq(1), ddq(2)};
+        accel_pub_->publish(accel_msg);
     }
 
     void publish_tf() {
@@ -300,8 +317,9 @@ private:
     Integrator integrator_{Integrator::RK4};
 
     // State: written by integration thread, read by timer callbacks
-    Eigen::Vector3d q_  {Eigen::Vector3d::Zero()};
-    Eigen::Vector3d dq_ {Eigen::Vector3d::Zero()};
+    Eigen::Vector3d q_   {Eigen::Vector3d::Zero()};
+    Eigen::Vector3d dq_  {Eigen::Vector3d::Zero()};
+    Eigen::Vector3d ddq_ {Eigen::Vector3d::Zero()};  // latest integration-step acceleration
     std::mutex state_mu_;
 
     // Torque input: written by subscription callback, read by integration thread
@@ -310,7 +328,8 @@ private:
 
     // ROS I/O
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr torque_sub_;
-    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr js_pub_;
+    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr       js_pub_;
+    rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr   accel_pub_;
     std::unique_ptr<tf2_ros::TransformBroadcaster> tf_bc_;
     rclcpp::TimerBase::SharedPtr pub_timer_;
 
