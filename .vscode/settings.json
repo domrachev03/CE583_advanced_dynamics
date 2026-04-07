@@ -1,0 +1,14 @@
+{
+  "C_Cpp.intelliSenseEngine": "disabled",
+  "clangd.arguments": [
+    "--background-index",
+    "--clang-tidy",
+    "--header-insertion=iwyu",
+    "--completion-style=detailed",
+    "--pch-storage=memory"
+  ],
+  "files.associations": {
+    "*.hpp": "cpp",
+    "*.ipp": "cpp"
+  }
+}

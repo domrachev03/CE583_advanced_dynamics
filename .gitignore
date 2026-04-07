@@ -6,6 +6,7 @@
 build/
 install/
 log/
+compile_commands.json
 
 # Beads / Dolt files
 .beads/

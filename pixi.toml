@@ -9,7 +9,7 @@ version = "0.1.0"
 scripts = ["scripts/activate.sh", "install/setup.sh"]
 
 [tasks]
-build = { cmd = "colcon build --symlink-install --cmake-args -G Ninja", inputs = ["src"], outputs = ["build", "install"] }
+build = { cmd = "colcon build --symlink-install --cmake-args -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && python scripts/merge_compile_commands.py", inputs = ["src"], outputs = ["build", "install", "compile_commands.json"] }
 sim = {cmd = "pixi run ros2 run phantom_sim simulator_node", depends-on = ["build"] }
 gravity_comp = {cmd = "ros2 run phantom_controllers gravity_comp_node", depends-on = ["build"]}
 rviz = { cmd = "ros2 run rviz2 rviz2 -d install/phantom_sim/share/phantom_sim/rviz/phantom.rviz", depends-on = ["build"]}
