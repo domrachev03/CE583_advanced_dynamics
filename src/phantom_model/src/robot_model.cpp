@@ -207,14 +207,14 @@ void RobotModel::build_model() {
     SX C = SX::zeros(3, 3);
     for (int j = 0; j < 3; ++j) {
         for (int k = 0; k < 3; ++k) {
-            SX cjk = SX::zeros(1, 1);
+            SX ckj = SX::zeros(1, 1);
             for (int i = 0; i < 3; ++i) {
-                cjk = cjk
+                ckj = ckj
                     + (jacobian(D(k, j), q(i))
                      + jacobian(D(k, i), q(j))
                      - jacobian(D(i, j), q(k))) / 2.0 * dq(i);
             }
-            C(j, k) = cjk;
+            C(k, j) = ckj;
         }
     }
 
