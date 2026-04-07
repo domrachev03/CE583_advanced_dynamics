@@ -105,6 +105,89 @@ int main(int argc, char** argv) {
     const double max_skew = (S + S.transpose()).cwiseAbs().maxCoeff();
     std::cout << "Max |S + S^T| (should be ~0): " << max_skew << "\n";
 
+    // === TCP Jacobian checks ===
+    // (1) J * dq should equal d/dt p_tcp computed by central finite
+    //     difference on forward_kinematics at (q, dq).
+    // (2) tcp_jacobian_dot(q, dq) should equal the central finite difference
+    //     of tcp_jacobian along the dq direction.
+    std::cout << "\n=== TCP Jacobian checks ===\n";
+    {
+        auto p_tcp_of = [&](const Eigen::Vector3d& qv) {
+            auto fk = model.forward_kinematics(qv);
+            Eigen::Matrix4d T06 = fk[0] * fk[1] * fk[3] * fk[5];
+            return Eigen::Vector3d(T06.block<3, 1>(0, 3));
+        };
+
+        const double h = 1e-6;
+        Eigen::Matrix<double, 6, 3> J = model.tcp_jacobian(q_test);
+        Eigen::Vector3d v_analytic = J.block<3, 3>(0, 0) * dq_test;
+
+        Eigen::Vector3d p_plus  = p_tcp_of(q_test + h * dq_test);
+        Eigen::Vector3d p_minus = p_tcp_of(q_test - h * dq_test);
+        Eigen::Vector3d v_fd    = (p_plus - p_minus) / (2 * h);
+
+        std::cout << "  |J*dq − v_fd| = "
+                  << (v_analytic - v_fd).cwiseAbs().maxCoeff() << "\n";
+
+        Eigen::Matrix<double, 6, 3> J_dot_analytic =
+            model.tcp_jacobian_dot(q_test, dq_test);
+        Eigen::Matrix<double, 6, 3> J_plus  = model.tcp_jacobian(q_test + h * dq_test);
+        Eigen::Matrix<double, 6, 3> J_minus = model.tcp_jacobian(q_test - h * dq_test);
+        Eigen::Matrix<double, 6, 3> J_dot_fd = (J_plus - J_minus) / (2 * h);
+
+        std::cout << "  |J_dot − J_dot_fd| = "
+                  << (J_dot_analytic - J_dot_fd).cwiseAbs().maxCoeff() << "\n";
+    }
+
+    // === ModelErrors checks ===
+    // Since only masses are scaled (not inertia tensors), the inertia
+    // matrix splits as  D = D_trans(m) + D_rot(I)  where only the first
+    // half has m_i as a coefficient.  So D does NOT scale linearly with k
+    // under mass-only perturbation.  G, on the other hand, has V = -Σ m_i
+    // p_i^T g, which does scale linearly, so G(k) = k·G(1) exactly.
+    //
+    // Independent sanity checks that survive the mass-only convention:
+    //   (1) Default ModelErrors{} produces bit-identical D, C, G.
+    //   (2) G scales linearly with scalar_scale.
+    //   (3) Scaled model still satisfies D*ddq + C*dq + G = tau at machine
+    //       precision (physical consistency of the rebuilt symbolic model).
+    //   (4) Scaled D is still symmetric and its determinant is positive
+    //       (necessary condition for PD).
+    std::cout << "\n=== ModelErrors checks ===\n";
+    {
+        // (1) default ModelErrors{} → bit-identical
+        phantom_model::RobotModel model_default(argv[1], phantom_model::ModelErrors{});
+        double d_default =
+            (model_default.inertia_matrix(q_test) - D_ref).cwiseAbs().maxCoeff();
+        std::cout << "  default ModelErrors{}: |D - D_ref| = " << d_default << "\n";
+
+        // (2) G(k) = k·G(1)
+        phantom_model::ModelErrors errors;
+        errors.scalar_scale = 2.0;
+        phantom_model::RobotModel model_2x(argv[1], errors);
+
+        Eigen::Vector3d G_ref_1x = model.gravity_vector(q_test);
+        Eigen::Vector3d G_ref_2x = model_2x.gravity_vector(q_test);
+        double dG = (G_ref_2x - 2.0 * G_ref_1x).cwiseAbs().maxCoeff();
+        std::cout << "  G scaling: |G(k=2) - 2·G(k=1)| = " << dG << "\n";
+
+        // (3) forward_dynamics consistency at the scaled model
+        Eigen::Matrix3d D_2x   = model_2x.inertia_matrix(q_test);
+        Eigen::Matrix3d C_2x   = model_2x.coriolis_matrix(q_test, dq_test);
+        Eigen::Vector3d tau_2x = Eigen::Vector3d(0.1, -0.05, 0.02);
+        Eigen::Vector3d ddq_2x = model_2x.forward_dynamics(q_test, dq_test, tau_2x);
+        Eigen::Vector3d res_2x = D_2x * ddq_2x + C_2x * dq_test + G_ref_2x - tau_2x;
+        std::cout << "  forward-dyn residual at k=2: "
+                  << res_2x.cwiseAbs().maxCoeff() << "\n";
+
+        // (4) Scaled D symmetry + det > 0
+        double sym_err = (D_2x - D_2x.transpose()).cwiseAbs().maxCoeff();
+        double det_D_2x = D_2x.determinant();
+        std::cout << "  scaled D symmetry err: " << sym_err
+                  << ", det(D) = " << det_D_2x
+                  << (det_D_2x > 0 ? " (OK)" : " (FAIL)") << "\n";
+    }
+
     // === Verify D*ddq + C*dq + G = tau ===
     std::cout << "\n=== Forward dynamics consistency check ===\n";
     Eigen::Vector3d tau_test(0.1, -0.05, 0.02);

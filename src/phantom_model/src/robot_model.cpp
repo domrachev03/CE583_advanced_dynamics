@@ -12,19 +12,37 @@ using namespace casadi;
 // ===========================================================================
 // Construction
 // ===========================================================================
-RobotModel::RobotModel(const std::string& config_path) {
-    load_params(config_path);
+RobotModel::RobotModel(const std::string& config_path)
+    : RobotModel(config_path, ModelErrors{}) {}
+
+RobotModel::RobotModel(const std::string& config_path,
+                       const ModelErrors& errors) {
+    // Validate scales before touching the YAML.  Zero or negative scales
+    // would violate D ≻ 0 (the inertia matrix would no longer be PD).
+    if (errors.scalar_scale <= 0.0) {
+        throw std::invalid_argument(
+            "RobotModel: ModelErrors.scalar_scale must be > 0");
+    }
+    for (int i = 0; i < 5; ++i) {
+        if (errors.per_link_scale[i] <= 0.0) {
+            throw std::invalid_argument(
+                "RobotModel: ModelErrors.per_link_scale[" +
+                std::to_string(i) + "] must be > 0");
+        }
+    }
+    load_params(config_path, errors);
     build_model();
 }
 
 // ===========================================================================
 // YAML loading
 // ===========================================================================
-void RobotModel::load_params(const std::string& config_path) {
+void RobotModel::load_params(const std::string& config_path,
+                             const ModelErrors& errors) {
     YAML::Node config = YAML::LoadFile(config_path);
     auto ph = config["phantom"];
 
-    // Gravity
+    // Gravity (field vector, not torque — stays at YAML values).
     for (int i = 0; i < 3; ++i)
         gravity_(i) = ph["gravity"][i].as<double>();
 
@@ -43,13 +61,20 @@ void RobotModel::load_params(const std::string& config_path) {
     kin_params_.link4_x_offset   = kin["link4_x_offset"].as<double>();
     kin_params_.link5_x_offset   = kin["link5_x_offset"].as<double>();
 
-    // Links
+    // Links.  Mass is scaled here — inertia tensors and COM positions are
+    // left at YAML values (see ModelErrors doc for rationale).  The entire
+    // downstream CasADi symbolic model is rebuilt from the scaled masses,
+    // so D, C, and G all stay mutually consistent.
     links_.resize(5);
     for (int n = 0; n < 5; ++n) {
         std::string name = "link" + std::to_string(n + 1);
         links_[n].name = name;
+
         auto lk = ph["links"][name];
-        links_[n].mass = lk["mass"].as<double>();
+        const double mass_scale =
+            errors.scalar_scale * errors.per_link_scale[n];
+        links_[n].mass = mass_scale * lk["mass"].as<double>();
+
         for (int j = 0; j < 3; ++j)
             links_[n].com(j) = lk["com"][j].as<double>();
         for (int r = 0; r < 3; ++r)
@@ -270,6 +295,35 @@ void RobotModel::build_model() {
          reshape(T_46, 16, 1)},
         {"q"},
         {"T_01", "T_12", "T_13", "T_24", "T_35", "T_46"});
+
+    // ---- TCP geometric Jacobian  J_tcp (6x3)  ------------------------------
+    // TCP pose in base frame via the non-parallelogram chain:
+    //     T_06 = T_01 * T_12 * T_24 * T_46
+    // Linear part:  J_v = ∂p_tcp/∂q          (3x3)
+    // Angular part: J_w = link4's angular-velocity Jacobian.
+    //   The TCP is rigidly attached to link4 via the parallelogram closure,
+    //   so its angular velocity equals link4's, which was already built as
+    //   Jw[3] = [z01, 0, z03]  (joint 2 decouples from link4).
+    SX T_06 = mtimes(mtimes(mtimes(T_01, T_12), T_24), T_46);
+    SX p_tcp = T_06(Slice(0, 3), 3);
+    SX J_v = jacobian(p_tcp, q);        // 3x3
+    SX J_w = Jw[3];                     // 3x3, already built above
+    SX J_tcp = SX::vertcat({J_v, J_w}); // 6x3
+
+    // d/dt J_tcp(q(t)) = (∂J_tcp/∂q) · dq, computed symbolically via jtimes
+    // (forward-mode directional derivative).  jtimes requires a column-vector
+    // expression, so we vectorise J_tcp to 18x1, differentiate, and reshape.
+    SX J_tcp_vec     = reshape(J_tcp, 18, 1);
+    SX J_tcp_dot_vec = jtimes(J_tcp_vec, q, dq);
+    SX J_tcp_dot     = reshape(J_tcp_dot_vec, 6, 3);
+
+    tcp_jac_fn_ = Function("tcp_jac",
+        {q}, {J_tcp},
+        {"q"}, {"J_tcp"});
+
+    tcp_jac_dot_fn_ = Function("tcp_jac_dot",
+        {q, dq}, {J_tcp_dot},
+        {"q", "dq"}, {"J_tcp_dot"});
 }
 
 // ===========================================================================
@@ -300,6 +354,11 @@ inline Eigen::Matrix3d to_mat3(const DM& dm) {
 inline Eigen::Matrix4d to_mat4(const DM& dm) {
     DM dense = DM::densify(dm);
     return Eigen::Map<const Eigen::Matrix4d>(dense.ptr());
+}
+
+inline Eigen::Matrix<double, 6, 3> to_mat6x3(const DM& dm) {
+    DM dense = DM::densify(dm);
+    return Eigen::Map<const Eigen::Matrix<double, 6, 3>>(dense.ptr());
 }
 
 }  // namespace
@@ -345,6 +404,21 @@ std::array<Eigen::Matrix4d, 6> RobotModel::forward_kinematics(
         out[i] = to_mat4(res.at(i));
     }
     return out;
+}
+
+Eigen::Matrix<double, 6, 3> RobotModel::tcp_jacobian(
+    const Eigen::Vector3d& q) const {
+    std::vector<DM> args = {to_dm(q)};
+    auto res = tcp_jac_fn_(args);
+    return to_mat6x3(res.at(0));
+}
+
+Eigen::Matrix<double, 6, 3> RobotModel::tcp_jacobian_dot(
+    const Eigen::Vector3d& q,
+    const Eigen::Vector3d& dq) const {
+    std::vector<DM> args = {to_dm(q), to_dm(dq)};
+    auto res = tcp_jac_dot_fn_(args);
+    return to_mat6x3(res.at(0));
 }
 
 }  // namespace phantom_model
