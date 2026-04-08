@@ -74,14 +74,12 @@ protected:
 
     // ---- Robot model access ------------------------------------------------
 
-    /// Access the shared robot model (for computing dynamics, FK, etc.)
-    const phantom_model::RobotModel& model() const { return *model_; }
+    std::unique_ptr<phantom_model::RobotModel> model_;
 
 private:
     void joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr msg);
     void control_tick();
 
-    std::unique_ptr<phantom_model::RobotModel> model_;
 
     // Latest robot state (written by subscription, read by timer + subclass)
     Eigen::Vector3d q_      {Eigen::Vector3d::Zero()};
